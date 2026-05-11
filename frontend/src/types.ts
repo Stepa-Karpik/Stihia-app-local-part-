@@ -47,3 +47,9 @@ export type LineAnalysis = {
 };
 
 export type ModelStatus = Record<string, { path: string; exists: boolean }>;
+
+export type SpeechTranscription = {
+  text: string;
+  engine: string;
+  warning: string | null;
+};

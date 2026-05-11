@@ -31,7 +31,7 @@ class AppSettings(BaseSettings):
     voice_live_model_path: str = "models/voice-live.bin"
     voice_final_model_path: str = "models/voice-final.bin"
     voice_vad_model_path: str = "models/voice-vad.onnx"
-    qwen_asr_model_path: str = "/home/stepka/Qwen3-ASR-1.7B"
+    qwen_asr_model_path: str = "/models/qwen-asr"
 
     studio_default_background: str = "#050505"
     studio_default_text: str = "#f7f7f4"

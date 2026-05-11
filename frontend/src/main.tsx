@@ -73,6 +73,10 @@ function App() {
   const [modelStatus, setModelStatus] = useState<ModelStatus>({});
   const [isRecording, setIsRecording] = useState(false);
   const recognitionRef = useRef<any>(null);
+  const mediaRecorderRef = useRef<MediaRecorder | null>(null);
+  const mediaChunksRef = useRef<Blob[]>([]);
+  const mediaStreamRef = useRef<MediaStream | null>(null);
+  const applyVoiceRef = useRef(false);
   const editorRef = useRef<HTMLTextAreaElement>(null);
 
   const locked = selectedPoem?.is_locked && !sessionUnlocked;
@@ -219,10 +223,55 @@ function App() {
     setContextMenu({ x: event.clientX, y: event.clientY, selected });
   }
 
-  function startVoice() {
+  async function startVoice() {
     if (settings.speech_recognizer !== "browser") {
+      if (!navigator.mediaDevices?.getUserMedia || !window.MediaRecorder) {
+        setVoiceText("Запись через MediaRecorder недоступна в этом браузере.");
+        return;
+      }
+      setVoiceText("Слушаю. После остановки отправлю аудио выбранному движку.");
       setIsRecording(true);
-      setVoiceText("Локальная модель будет подключена следующим блоком. Сейчас доступен браузерный режим.");
+      try {
+        const stream = await navigator.mediaDevices.getUserMedia({ audio: true });
+        const recorderOptions = MediaRecorder.isTypeSupported("audio/webm") ? { mimeType: "audio/webm" } : undefined;
+        const recorder = new MediaRecorder(stream, recorderOptions);
+        mediaStreamRef.current = stream;
+        mediaChunksRef.current = [];
+        recorder.ondataavailable = (event) => {
+          if (event.data.size > 0) {
+            mediaChunksRef.current.push(event.data);
+          }
+        };
+        recorder.onstop = async () => {
+          stream.getTracks().forEach((track) => track.stop());
+          mediaStreamRef.current = null;
+          setIsRecording(false);
+          if (!applyVoiceRef.current) {
+            setVoiceText("");
+            return;
+          }
+          try {
+            setVoiceText("Распознаю аудио...");
+            const blob = new Blob(mediaChunksRef.current, { type: "audio/webm" });
+            const result = await api.transcribeAudio(blob, settings.speech_recognizer);
+            if (result.warning) {
+              setVoiceText(result.warning);
+              return;
+            }
+            setVoiceText(result.text);
+            if (result.text.trim()) {
+              setText((value) => `${value}${value ? "\n" : ""}${result.text.trim()}`);
+            }
+          } catch (error) {
+            setVoiceText(error instanceof Error ? error.message : "Не удалось распознать аудио.");
+          }
+        };
+        mediaRecorderRef.current = recorder;
+        recorder.start();
+      } catch (error) {
+        setIsRecording(false);
+        setVoiceText(error instanceof Error ? error.message : "Микрофон недоступен.");
+      }
       return;
     }
 
@@ -249,6 +298,16 @@ function App() {
   }
 
   function stopVoice(apply: boolean) {
+    applyVoiceRef.current = apply;
+    if (settings.speech_recognizer !== "browser") {
+      if (mediaRecorderRef.current?.state === "recording") {
+        mediaRecorderRef.current.stop();
+      } else {
+        mediaStreamRef.current?.getTracks().forEach((track) => track.stop());
+        setIsRecording(false);
+      }
+      return;
+    }
     recognitionRef.current?.stop?.();
     setIsRecording(false);
     if (apply && voiceText.trim()) {

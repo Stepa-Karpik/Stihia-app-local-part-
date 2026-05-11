@@ -1,4 +1,4 @@
-import type { AppSettings, LineAnalysis, ModelStatus, Phrase, Poem, PoemVersion } from "./types";
+import type { AppSettings, LineAnalysis, ModelStatus, Phrase, Poem, PoemVersion, SpeechTranscription } from "./types";
 
 const API_BASE_URL = import.meta.env.VITE_API_BASE_URL ?? "http://localhost:8000";
 
@@ -84,6 +84,19 @@ export const api = {
       method: "POST",
       body: JSON.stringify({ text, mode })
     }),
+  transcribeAudio: async (audio: Blob, recognizer: string) => {
+    const form = new FormData();
+    form.append("recognizer", recognizer);
+    form.append("audio", audio, "voice.webm");
+    const response = await fetch(`${API_BASE_URL}/api/speech/transcribe`, {
+      method: "POST",
+      body: form
+    });
+    if (!response.ok) {
+      throw new Error(await response.text());
+    }
+    return response.json() as Promise<SpeechTranscription>;
+  },
   modelStatus: () => request<ModelStatus>("/api/system/models"),
   flushTelegramOutbox: () =>
     request<{ sent: number; failed: number }>("/api/system/telegram-outbox/flush", {
