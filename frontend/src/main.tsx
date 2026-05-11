@@ -1,99 +1,435 @@
-import React, { useState } from "react";
+import React, { useEffect, useMemo, useRef, useState } from "react";
 import { createRoot } from "react-dom/client";
-import { Download, LockOpen, Mic, Settings } from "lucide-react";
+import {
+  Archive,
+  Download,
+  FilePlus2,
+  History,
+  Lock,
+  LockOpen,
+  Mic,
+  MoreHorizontal,
+  RotateCcw,
+  Save,
+  Search,
+  Settings,
+  Trash2,
+  Wand2
+} from "lucide-react";
+import { api } from "./api";
+import type { AppSettings, Phrase, Poem, PoemVersion, SpeechRecognizer } from "./types";
 import "./styles.css";
 
-const poems = [
-  {
-    title: "Агония в пистолете",
-    createdAt: "12 мая 2026",
-    updatedAt: "только что",
-    locked: true
-  },
-  {
-    title: "Белый шум лестниц",
-    createdAt: "11 мая 2026",
-    updatedAt: "вчера",
-    locked: false
+type View = "active" | "deleted" | "archive" | "settings";
+type Mode = "studio" | "idle";
+
+const DEFAULT_SETTINGS: AppSettings = {
+  studio_background: "#050505",
+  studio_text: "#f7f7f4",
+  studio_font_size: 22,
+  speech_recognizer: "local_whisper"
+};
+
+function formatDate(value: string) {
+  return new Intl.DateTimeFormat("ru-RU", {
+    day: "2-digit",
+    month: "short",
+    hour: "2-digit",
+    minute: "2-digit"
+  }).format(new Date(value));
+}
+
+function lineRangeForSelection(text: string, selectedText: string) {
+  const index = selectedText ? text.indexOf(selectedText) : -1;
+  if (index < 0) {
+    return { start: 1, end: 1, count: 1 };
   }
-];
+  const before = text.slice(0, index);
+  const start = before.split("\n").length;
+  const count = Math.max(1, selectedText.split("\n").length);
+  return { start, end: start + count - 1, count };
+}
 
 function App() {
-  const [mode, setMode] = useState<"studio" | "idle">("studio");
-  const [fontSize, setFontSize] = useState(22);
-  const [contextMenu, setContextMenu] = useState<{ x: number; y: number } | null>(null);
+  const [view, setView] = useState<View>("active");
+  const [mode, setMode] = useState<Mode>("studio");
+  const [poems, setPoems] = useState<Poem[]>([]);
+  const [deletedPoems, setDeletedPoems] = useState<Poem[]>([]);
+  const [selectedPoem, setSelectedPoem] = useState<Poem | null>(null);
+  const [title, setTitle] = useState("");
+  const [text, setText] = useState("");
+  const [versions, setVersions] = useState<PoemVersion[]>([]);
+  const [phrases, setPhrases] = useState<Phrase[]>([]);
+  const [settings, setSettings] = useState<AppSettings>(DEFAULT_SETTINGS);
+  const [sessionUnlocked, setSessionUnlocked] = useState(false);
+  const [password, setPassword] = useState("");
+  const [newPassword, setNewPassword] = useState("");
+  const [oldPassword, setOldPassword] = useState("");
+  const [message, setMessage] = useState("");
+  const [contextMenu, setContextMenu] = useState<{ x: number; y: number; selected: string } | null>(null);
+  const [highlight, setHighlight] = useState<{ stanza: number; line: number } | null>(null);
+  const [voiceText, setVoiceText] = useState("");
+  const [isRecording, setIsRecording] = useState(false);
+  const recognitionRef = useRef<any>(null);
+  const editorRef = useRef<HTMLTextAreaElement>(null);
+
+  const locked = selectedPoem?.is_locked && !sessionUnlocked;
+  const currentLineContract = useMemo(() => lineRangeForSelection(text, contextMenu?.selected ?? ""), [text, contextMenu]);
+
+  async function refresh() {
+    const [active, deleted, appSettings, archive] = await Promise.all([
+      api.listPoems(),
+      api.listDeletedPoems(),
+      api.getSettings().catch(() => DEFAULT_SETTINGS),
+      api.listPhrases().catch(() => [])
+    ]);
+    setPoems(active);
+    setDeletedPoems(deleted);
+    setSettings(appSettings);
+    setPhrases(archive);
+
+    if (!selectedPoem && active[0]) {
+      selectPoem(active[0]);
+    }
+  }
+
+  async function selectPoem(poem: Poem) {
+    setSelectedPoem(poem);
+    setTitle(poem.title);
+    setText(poem.text);
+    setVersions(await api.listVersions(poem.id).catch(() => []));
+    setView(poem.is_deleted ? "deleted" : "active");
+  }
+
+  async function createPoem() {
+    const poem = await api.createPoem("Новый стих", "");
+    setPoems((items) => [poem, ...items]);
+    await selectPoem(poem);
+  }
+
+  async function savePoem(source = "Сохранено") {
+    if (!selectedPoem || locked) return;
+    const updated = await api.updatePoem(selectedPoem.id, title, text);
+    setSelectedPoem(updated);
+    setPoems((items) => [updated, ...items.filter((item) => item.id !== updated.id)]);
+    setVersions(await api.listVersions(updated.id));
+    setMessage(source);
+  }
+
+  async function deletePoem() {
+    if (!selectedPoem) return;
+    await api.deletePoem(selectedPoem.id);
+    setMessage("Стих скрыт");
+    setSelectedPoem(null);
+    setTitle("");
+    setText("");
+    await refresh();
+  }
+
+  async function restorePoem(poem: Poem) {
+    const restored = await api.restorePoem(poem.id);
+    setMessage("Стих восстановлен");
+    await refresh();
+    await selectPoem(restored);
+  }
+
+  async function lockPoem() {
+    if (!selectedPoem) return;
+    const updated = await api.lockPoem(selectedPoem.id);
+    setSelectedPoem(updated);
+    setPoems((items) => items.map((item) => (item.id === updated.id ? updated : item)));
+  }
+
+  async function unlockSession() {
+    const result = await api.unlockSession(password);
+    setSessionUnlocked(result.session_unlocked);
+    setPassword("");
+  }
+
+  async function changePassword() {
+    await api.changePassword(oldPassword || null, newPassword);
+    setOldPassword("");
+    setNewPassword("");
+    setMessage("Пароль обновлен");
+  }
+
+  async function saveSettings() {
+    const updated = await api.updateSettings(settings);
+    setSettings(updated);
+    setMessage("Настройки сохранены");
+  }
+
+  async function savePhrase(selected: string) {
+    if (!selectedPoem || !selected.trim()) return;
+    const range = lineRangeForSelection(text, selected);
+    const phrase = await api.createPhrase({
+      text: selected.trim(),
+      poem_id: selectedPoem.id,
+      start_line: range.start,
+      end_line: range.end,
+      note: "сохранено вручную"
+    });
+    setPhrases((items) => [phrase, ...items]);
+    setMessage("Фраза сохранена в архив");
+  }
+
+  async function openPhrase(phrase: Phrase) {
+    const poem = await api.getPoem(phrase.source.poem_id);
+    await selectPoem(poem);
+    setView("active");
+    const stanza = Math.ceil(phrase.source.start_line / 4);
+    setHighlight({ stanza, line: phrase.source.start_line });
+    setTimeout(() => setHighlight(null), 2600);
+  }
+
+  function exportMarkdown() {
+    if (!selectedPoem) return;
+    window.location.href = api.exportMarkdownUrl(selectedPoem.id);
+  }
+
+  function openContextMenu(event: React.MouseEvent<HTMLTextAreaElement>) {
+    event.preventDefault();
+    const selected = window.getSelection()?.toString() || text.slice(event.currentTarget.selectionStart, event.currentTarget.selectionEnd);
+    setContextMenu({ x: event.clientX, y: event.clientY, selected });
+  }
+
+  function startVoice() {
+    if (settings.speech_recognizer !== "browser") {
+      setIsRecording(true);
+      setVoiceText("Локальная модель будет подключена следующим блоком. Сейчас доступен браузерный режим.");
+      return;
+    }
+
+    const SpeechRecognition = (window as any).SpeechRecognition || (window as any).webkitSpeechRecognition;
+    if (!SpeechRecognition) {
+      setVoiceText("Браузерное распознавание недоступно.");
+      return;
+    }
+
+    const recognition = new SpeechRecognition();
+    recognition.lang = "ru-RU";
+    recognition.continuous = true;
+    recognition.interimResults = true;
+    recognition.onresult = (event: any) => {
+      const transcript = Array.from(event.results)
+        .map((result: any) => result[0].transcript)
+        .join("\n");
+      setVoiceText(transcript);
+    };
+    recognition.onend = () => setIsRecording(false);
+    recognition.start();
+    recognitionRef.current = recognition;
+    setIsRecording(true);
+  }
+
+  function stopVoice(apply: boolean) {
+    recognitionRef.current?.stop?.();
+    setIsRecording(false);
+    if (apply && voiceText.trim()) {
+      setText((value) => `${value}${value ? "\n" : ""}${voiceText.trim()}`);
+      setVoiceText("");
+    }
+  }
+
+  useEffect(() => {
+    refresh().catch((error) => setMessage(`API недоступен: ${error.message}`));
+  }, []);
+
+  const visiblePoems = view === "deleted" ? deletedPoems : poems;
 
   return (
-    <main className="shell" onClick={() => setContextMenu(null)}>
+    <main
+      className={mode === "idle" ? "shell idle" : "shell"}
+      style={{ background: settings.studio_background, color: settings.studio_text }}
+      onClick={() => setContextMenu(null)}
+    >
       <header className="topbar">
         <strong>Стихия</strong>
-        <nav aria-label="Режим редактора">
+        <nav>
           <button className={mode === "studio" ? "active" : ""} onClick={() => setMode("studio")}>Студия</button>
           <button className={mode === "idle" ? "active" : ""} onClick={() => setMode("idle")}>IDLE</button>
         </nav>
         <div className="actions">
-          <button title="Голосовой ввод"><Mic size={18} /></button>
-          <button title="Экспорт в Markdown"><Download size={18} /></button>
-          <button title="Настройки"><Settings size={18} /></button>
+          <button title="Новый стих" onClick={createPoem}><FilePlus2 size={18} /></button>
+          <button title="Сохранить" onClick={() => savePoem()}><Save size={18} /></button>
+          <button title="Экспорт в Markdown" onClick={exportMarkdown}><Download size={18} /></button>
+          <button title="Настройки" onClick={() => setView("settings")}><Settings size={18} /></button>
         </div>
       </header>
 
       <aside className="library">
-        <div className="label">По дате изменения</div>
-        {poems.map((poem) => (
-          <button key={poem.title} className={poem.locked ? "poem locked" : "poem"}>
-            <span>{poem.title}</span>
-            <small>создан: {poem.createdAt} · изменен: {poem.updatedAt}</small>
-          </button>
-        ))}
-        <button className="deleted">Удаленные</button>
+        <div className="library-tabs">
+          <button className={view === "active" ? "active" : ""} onClick={() => setView("active")}>Стихи</button>
+          <button className={view === "archive" ? "active" : ""} onClick={() => setView("archive")}><Archive size={15} /> Архив</button>
+          <button className={view === "deleted" ? "active" : ""} onClick={() => setView("deleted")}><Trash2 size={15} /> Удаленные</button>
+        </div>
+
+        {view !== "archive" && view !== "settings" && (
+          <>
+            <div className="label">{view === "deleted" ? "Скрытые стихи" : "По последнему изменению"}</div>
+            {visiblePoems.map((poem) => (
+              <button
+                key={poem.id}
+                className={`poem ${poem.is_locked ? "locked" : ""} ${selectedPoem?.id === poem.id ? "selected" : ""}`}
+                onClick={() => selectPoem(poem)}
+              >
+                <span>{poem.is_locked ? (sessionUnlocked ? <LockOpen size={14} /> : <Lock size={14} />) : null}{poem.title}</span>
+                <small>создан: {formatDate(poem.created_at)} · изменен: {formatDate(poem.updated_at)}</small>
+              </button>
+            ))}
+          </>
+        )}
+
+        {view === "archive" && (
+          <>
+            <div className="label">Лучшие фразы</div>
+            {phrases.map((phrase) => (
+              <button key={phrase.id} className="phrase" onClick={() => openPhrase(phrase)}>
+                <span>{phrase.text}</span>
+                <small>{phrase.note ?? "образ"} · строка {phrase.source.start_line}</small>
+              </button>
+            ))}
+          </>
+        )}
       </aside>
 
-      <section className={mode === "idle" ? "editor idle" : "editor"}>
-        <input className="title" value="Агония в пистолете" readOnly />
-        <article
-          className="poem-text"
-          style={{ fontSize }}
-          contentEditable
-          suppressContentEditableWarning
-          onContextMenu={(event) => {
-            event.preventDefault();
-            setContextMenu({ x: event.clientX, y: event.clientY });
-          }}
-        >
-          <p>Была агонией в смертника пистолете</p>
-          <p>и его решением одуматься в миг,</p>
-          <p>но город молчал, будто выдох на свете</p>
-          <p>застрял между ребер и больше не стих.</p>
-        </article>
-        <div className="voice-inline">
-          <Mic size={16} />
-          <span>Голосовой ввод внутри редактора</span>
-          <button>Начать</button>
-        </div>
+      <section className="editor">
+        {view === "settings" ? (
+          <SettingsView
+            settings={settings}
+            setSettings={setSettings}
+            oldPassword={oldPassword}
+            setOldPassword={setOldPassword}
+            newPassword={newPassword}
+            setNewPassword={setNewPassword}
+            saveSettings={saveSettings}
+            changePassword={changePassword}
+          />
+        ) : selectedPoem ? (
+          locked ? (
+            <div className="locked-screen">
+              <Lock size={28} />
+              <h1>{selectedPoem.title}</h1>
+              <input type="password" value={password} onChange={(event) => setPassword(event.target.value)} placeholder="Пароль" />
+              <button className="primary" onClick={unlockSession}>Разблокировать сессию</button>
+            </div>
+          ) : (
+            <>
+              <input className="title" value={title} onChange={(event) => setTitle(event.target.value)} />
+              <textarea
+                ref={editorRef}
+                className={highlight ? "poem-text highlighted" : "poem-text"}
+                style={{ fontSize: settings.studio_font_size }}
+                value={text}
+                onChange={(event) => setText(event.target.value)}
+                onContextMenu={openContextMenu}
+                spellCheck={false}
+              />
+              <div className="voice-inline">
+                <Mic size={16} />
+                <span>{isRecording ? "Запись идет" : "Голосовой ввод в редакторе"} · {settings.speech_recognizer}</span>
+                {isRecording ? (
+                  <>
+                    <button onClick={() => stopVoice(true)}>Добавить</button>
+                    <button onClick={() => stopVoice(false)}>Отмена</button>
+                  </>
+                ) : (
+                  <button onClick={startVoice}>Начать</button>
+                )}
+              </div>
+              {voiceText && <pre className="live-transcript">{voiceText}</pre>}
+            </>
+          )
+        ) : (
+          <div className="empty">Выбери стих или создай новый.</div>
+        )}
       </section>
 
       <aside className="inspector">
-        <div className="label">Настройки текста</div>
-        <label>
-          Размер
-          <input type="range" min="16" max="34" value={fontSize} onChange={(event) => setFontSize(Number(event.target.value))} />
-        </label>
-        <div className="preview" style={{ fontSize }}>Предпросмотр строки</div>
-        <button className="unlock"><LockOpen size={16} /> Сессия разблокирована</button>
+        <div className="label">Действия</div>
+        <button onClick={() => selectedPoem && lockPoem()}><Lock size={16} /> Запаролить стих</button>
+        <button onClick={deletePoem}><Trash2 size={16} /> Скрыть</button>
+        {view === "deleted" && selectedPoem && <button onClick={() => restorePoem(selectedPoem)}><RotateCcw size={16} /> Восстановить</button>}
+        <button><Search size={16} /> Поиск рифмы</button>
+        <button><Wand2 size={16} /> ИИ трансформация</button>
+
+        <div className="label spaced">Версии</div>
+        <div className="versions">
+          {versions.map((version) => (
+            <button key={version.id} onClick={() => { setTitle(version.title); setText(version.text); }}>
+              <History size={14} />
+              <span>{formatDate(version.created_at)} · {version.source}</span>
+            </button>
+          ))}
+        </div>
+        {message && <div className="status">{message}</div>}
       </aside>
 
       {contextMenu && (
         <menu className="context-menu" style={{ left: contextMenu.x, top: contextMenu.y }}>
-          <button>Отметить как задумано</button>
-          <button>Рекомендация ИИ</button>
-          <button>ИИ трансформация</button>
-          <button>Найти рифму</button>
-          <button>Сохранить как образ</button>
-          <button>Запретить ИИ менять</button>
+          <small>Выделено строк: {currentLineContract.count}</small>
+          <button onClick={() => setMessage("Фрагмент отмечен как задуманный")}>Отметить как задумано</button>
+          <button onClick={() => setMessage("ИИ вернет столько же строк, сколько выделено")}>Рекомендация ИИ</button>
+          <button onClick={() => setMessage("Трансформация подготовит вариант без применения")}>ИИ трансформация</button>
+          <button onClick={() => setMessage("Поиск рифмы будет учитывать контекст")}>Найти рифму</button>
+          <button onClick={() => savePhrase(contextMenu.selected)}>Сохранить как образ</button>
+          <button onClick={() => setMessage("ИИ больше не будет трогать этот фрагмент")}>Запретить ИИ менять</button>
         </menu>
       )}
     </main>
+  );
+}
+
+function SettingsView({
+  settings,
+  setSettings,
+  oldPassword,
+  setOldPassword,
+  newPassword,
+  setNewPassword,
+  saveSettings,
+  changePassword
+}: {
+  settings: AppSettings;
+  setSettings: (settings: AppSettings) => void;
+  oldPassword: string;
+  setOldPassword: (value: string) => void;
+  newPassword: string;
+  setNewPassword: (value: string) => void;
+  saveSettings: () => void;
+  changePassword: () => void;
+}) {
+  function setRecognizer(value: string) {
+    setSettings({ ...settings, speech_recognizer: value as SpeechRecognizer });
+  }
+
+  return (
+    <div className="settings-view">
+      <h1>Настройки</h1>
+      <section>
+        <h2>Вид редактора</h2>
+        <label>Фон Studio<input value={settings.studio_background} onChange={(event) => setSettings({ ...settings, studio_background: event.target.value })} /></label>
+        <label>Текст Studio<input value={settings.studio_text} onChange={(event) => setSettings({ ...settings, studio_text: event.target.value })} /></label>
+        <label>Размер текста<input type="range" min="16" max="34" value={settings.studio_font_size} onChange={(event) => setSettings({ ...settings, studio_font_size: Number(event.target.value) })} /></label>
+        <p className="preview" style={{ fontSize: settings.studio_font_size }}>Предпросмотр строки в редакторе</p>
+        <button className="primary" onClick={saveSettings}>Сохранить настройки</button>
+      </section>
+      <section>
+        <h2>Распознавание голоса</h2>
+        <select value={settings.speech_recognizer} onChange={(event) => setRecognizer(event.target.value)}>
+          <option value="local_whisper">Локальная Whisper-модель</option>
+          <option value="qwen_asr">Qwen ASR 1.7B</option>
+          <option value="browser">Браузерный алгоритм</option>
+          <option value="silero_vad_only">Только Silero VAD</option>
+        </select>
+      </section>
+      <section>
+        <h2>Пароль профиля</h2>
+        <input type="password" placeholder="Старый пароль" value={oldPassword} onChange={(event) => setOldPassword(event.target.value)} />
+        <input type="password" placeholder="Новый пароль" value={newPassword} onChange={(event) => setNewPassword(event.target.value)} />
+        <button onClick={changePassword}>Сменить пароль</button>
+      </section>
+    </div>
   );
 }
 

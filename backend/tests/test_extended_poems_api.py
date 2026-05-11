@@ -56,6 +56,9 @@ async def test_phrase_archive_keeps_source_pointer(tmp_path):
                 json={"title": "Стих", "text": "Была агонией в смертника пистолете\nи его решением"},
             )
             poem_id = created.json()["id"]
+            fetched = await client.get(f"/api/poems/{poem_id}")
+            assert fetched.status_code == 200
+            assert fetched.json()["id"] == poem_id
 
             phrase = await client.post(
                 "/api/phrases",

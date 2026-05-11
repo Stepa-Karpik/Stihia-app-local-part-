@@ -25,6 +25,15 @@ async def list_deleted_poems(request: Request) -> list[PoemResponse]:
     return [PoemResponse.from_record(record) for record in records]
 
 
+@router.get("/{poem_id}", response_model=PoemResponse)
+async def get_poem(poem_id: str, request: Request) -> PoemResponse:
+    try:
+        record = await poem_service(request).get_poem(poem_id)
+    except ValueError as exc:
+        raise HTTPException(status_code=404, detail="Poem not found") from exc
+    return PoemResponse.from_record(record)
+
+
 @router.get("/{poem_id}/versions", response_model=list[PoemVersionResponse])
 async def list_versions(poem_id: str, request: Request) -> list[PoemVersionResponse]:
     records = await poem_service(request).list_versions(poem_id)
