@@ -1,0 +1,44 @@
+services:
+  postgres:
+    image: postgres:16-alpine
+    environment:
+      POSTGRES_DB: stihia
+      POSTGRES_USER: stihia
+      POSTGRES_PASSWORD: stihia
+    volumes:
+      - postgres-data:/var/lib/postgresql/data
+    ports:
+      - "15433:5432"
+
+  redis:
+    image: redis:7-alpine
+    ports:
+      - "16380:6379"
+
+  backend:
+    build:
+      context: ./backend
+    env_file:
+      - path: .env
+        required: false
+    volumes:
+      - ./models:/app/models:ro
+      - ${QWEN_ASR_HOST_PATH:-/home/stepka/Qwen3-ASR-1.7B}:/models/qwen-asr:ro
+    ports:
+      - "8000:8000"
+    depends_on:
+      - postgres
+      - redis
+
+  frontend:
+    build:
+      context: ./frontend
+    environment:
+      VITE_API_BASE_URL: http://localhost:8000
+    ports:
+      - "5173:5173"
+    depends_on:
+      - backend
+
+volumes:
+  postgres-data:
