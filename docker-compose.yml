@@ -18,6 +18,8 @@ services:
   backend:
     build:
       context: ./backend
+      args:
+        INSTALL_ASR_RUNTIME: ${INSTALL_ASR_RUNTIME:-false}
     env_file:
       - path: .env
         required: false

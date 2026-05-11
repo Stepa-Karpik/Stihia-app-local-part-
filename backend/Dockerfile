@@ -6,7 +6,10 @@ ENV PYTHONDONTWRITEBYTECODE=1 \
 WORKDIR /app
 
 COPY requirements.txt .
+COPY requirements-asr.txt .
 RUN pip install --no-cache-dir -r requirements.txt
+ARG INSTALL_ASR_RUNTIME=false
+RUN if [ "$INSTALL_ASR_RUNTIME" = "true" ]; then pip install --no-cache-dir -r requirements-asr.txt; fi
 
 COPY app ./app
 
