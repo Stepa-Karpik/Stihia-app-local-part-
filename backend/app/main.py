@@ -3,10 +3,16 @@ from collections.abc import AsyncIterator
 
 from fastapi import FastAPI
 
+from app.api.app_settings import router as app_settings_router
+from app.api.phrases import router as phrases_router
 from app.api.poems import router as poems_router
+from app.api.profile import router as profile_router
 from app.core.settings import AppSettings
 from app.db.session import create_session_factory, init_models
+from app.services.app_settings_service import AppSettingsService
+from app.services.phrase_service import PhraseService
 from app.services.poem_service import PoemService
+from app.services.profile_service import ProfileService
 
 
 def create_app(database_url: str | None = None) -> FastAPI:
@@ -20,7 +26,13 @@ def create_app(database_url: str | None = None) -> FastAPI:
 
     app = FastAPI(title=settings.site_name, lifespan=lifespan)
     app.state.poem_service = PoemService(session_factory)
+    app.state.profile_service = ProfileService(session_factory)
+    app.state.phrase_service = PhraseService(session_factory)
+    app.state.app_settings_service = AppSettingsService(session_factory)
     app.include_router(poems_router)
+    app.include_router(profile_router)
+    app.include_router(phrases_router)
+    app.include_router(app_settings_router)
 
     @app.get("/health")
     async def health() -> dict[str, str]:

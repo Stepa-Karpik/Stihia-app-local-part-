@@ -43,6 +43,33 @@ class PoemService:
             poem.updated_at = now
             await session.commit()
 
+    async def restore_poem(self, poem_id: str, now: datetime) -> PoemRecord:
+        async with self._session_factory() as session:
+            poem = await session.get(PoemRecord, poem_id)
+            if poem is None:
+                raise ValueError("Poem not found")
+            poem.is_deleted = False
+            poem.deleted_at = None
+            poem.updated_at = now
+            await session.commit()
+            return poem
+
+    async def lock_poem(self, poem_id: str) -> PoemRecord:
+        async with self._session_factory() as session:
+            poem = await session.get(PoemRecord, poem_id)
+            if poem is None:
+                raise ValueError("Poem not found")
+            poem.is_locked = True
+            await session.commit()
+            return poem
+
+    async def get_poem(self, poem_id: str) -> PoemRecord:
+        async with self._session_factory() as session:
+            poem = await session.get(PoemRecord, poem_id)
+            if poem is None:
+                raise ValueError("Poem not found")
+            return poem
+
     async def list_poems(self, include_deleted: bool = False) -> list[PoemRecord]:
         async with self._session_factory() as session:
             statement = select(PoemRecord).order_by(PoemRecord.updated_at.desc())
