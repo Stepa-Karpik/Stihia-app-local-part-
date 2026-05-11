@@ -111,3 +111,39 @@ class AppSettingsRequest(BaseModel):
 
 class AppSettingsResponse(AppSettingsRequest):
     pass
+
+
+class AnalyzeTextRequest(BaseModel):
+    text: str
+
+
+class LineAnalysisResponse(BaseModel):
+    number: int
+    text: str
+    syllables: int
+    last_word: str | None
+
+
+class AnalyzeTextResponse(BaseModel):
+    line_count: int
+    lines: list[LineAnalysisResponse]
+
+
+class RhymeRequest(BaseModel):
+    word: str
+    context: str | None = None
+
+
+class RhymeResponse(BaseModel):
+    word: str
+    candidates: list[str]
+
+
+class DraftRequest(BaseModel):
+    text: str
+    mode: str
+
+
+class DraftResponse(BaseModel):
+    line_count: int
+    variants: list[str]

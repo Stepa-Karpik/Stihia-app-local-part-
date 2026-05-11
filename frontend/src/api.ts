@@ -1,4 +1,4 @@
-import type { AppSettings, Phrase, Poem, PoemVersion } from "./types";
+import type { AppSettings, LineAnalysis, Phrase, Poem, PoemVersion } from "./types";
 
 const API_BASE_URL = import.meta.env.VITE_API_BASE_URL ?? "http://localhost:8000";
 
@@ -68,5 +68,20 @@ export const api = {
     request<AppSettings>("/api/app-settings", {
       method: "PUT",
       body: JSON.stringify(settings)
+    }),
+  analyzeText: (text: string) =>
+    request<{ line_count: number; lines: LineAnalysis[] }>("/api/text-tools/analyze", {
+      method: "POST",
+      body: JSON.stringify({ text })
+    }),
+  findRhymes: (word: string, context: string) =>
+    request<{ word: string; candidates: string[] }>("/api/text-tools/rhyme", {
+      method: "POST",
+      body: JSON.stringify({ word, context })
+    }),
+  draft: (text: string, mode: string) =>
+    request<{ line_count: number; variants: string[] }>("/api/text-tools/draft", {
+      method: "POST",
+      body: JSON.stringify({ text, mode })
     })
 };

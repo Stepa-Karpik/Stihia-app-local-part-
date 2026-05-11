@@ -7,6 +7,7 @@ from app.api.app_settings import router as app_settings_router
 from app.api.phrases import router as phrases_router
 from app.api.poems import router as poems_router
 from app.api.profile import router as profile_router
+from app.api.text_tools import router as text_tools_router
 from app.core.settings import AppSettings
 from app.db.session import create_session_factory, init_models
 from app.services.app_settings_service import AppSettingsService
@@ -33,6 +34,7 @@ def create_app(database_url: str | None = None) -> FastAPI:
     app.include_router(profile_router)
     app.include_router(phrases_router)
     app.include_router(app_settings_router)
+    app.include_router(text_tools_router)
 
     @app.get("/health")
     async def health() -> dict[str, str]:

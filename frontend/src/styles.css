@@ -214,6 +214,36 @@ button {
   color: rgba(247, 247, 244, 0.68);
 }
 
+.analysis-list,
+.tool-result {
+  display: grid;
+  gap: 7px;
+}
+
+.analysis-list div {
+  display: grid;
+  grid-template-columns: 24px 42px 1fr;
+  gap: 8px;
+  color: rgba(247, 247, 244, 0.6);
+  font-size: 13px;
+}
+
+.analysis-list strong {
+  color: rgba(247, 247, 244, 0.84);
+}
+
+.analysis-list small {
+  color: rgba(247, 247, 244, 0.42);
+}
+
+.tool-result button {
+  width: 100%;
+  justify-content: flex-start;
+  white-space: pre-wrap;
+  text-align: left;
+  color: rgba(247, 247, 244, 0.72);
+}
+
 .status {
   margin-top: 28px;
   color: rgba(247, 247, 244, 0.64);

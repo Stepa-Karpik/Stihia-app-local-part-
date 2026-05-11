@@ -38,3 +38,10 @@ export type AppSettings = {
   studio_font_size: number;
   speech_recognizer: SpeechRecognizer;
 };
+
+export type LineAnalysis = {
+  number: number;
+  text: string;
+  syllables: number;
+  last_word: string | null;
+};

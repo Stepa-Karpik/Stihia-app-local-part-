@@ -8,7 +8,6 @@ import {
   Lock,
   LockOpen,
   Mic,
-  MoreHorizontal,
   RotateCcw,
   Save,
   Search,
@@ -17,7 +16,7 @@ import {
   Wand2
 } from "lucide-react";
 import { api } from "./api";
-import type { AppSettings, Phrase, Poem, PoemVersion, SpeechRecognizer } from "./types";
+import type { AppSettings, LineAnalysis, Phrase, Poem, PoemVersion, SpeechRecognizer } from "./types";
 import "./styles.css";
 
 type View = "active" | "deleted" | "archive" | "settings";
@@ -69,6 +68,8 @@ function App() {
   const [contextMenu, setContextMenu] = useState<{ x: number; y: number; selected: string } | null>(null);
   const [highlight, setHighlight] = useState<{ stanza: number; line: number } | null>(null);
   const [voiceText, setVoiceText] = useState("");
+  const [analysis, setAnalysis] = useState<LineAnalysis[]>([]);
+  const [toolResult, setToolResult] = useState<string[]>([]);
   const [isRecording, setIsRecording] = useState(false);
   const recognitionRef = useRef<any>(null);
   const editorRef = useRef<HTMLTextAreaElement>(null);
@@ -98,6 +99,7 @@ function App() {
     setTitle(poem.title);
     setText(poem.text);
     setVersions(await api.listVersions(poem.id).catch(() => []));
+    setAnalysis((await api.analyzeText(poem.text).catch(() => ({ lines: [] }))).lines);
     setView(poem.is_deleted ? "deleted" : "active");
   }
 
@@ -113,6 +115,7 @@ function App() {
     setSelectedPoem(updated);
     setPoems((items) => [updated, ...items.filter((item) => item.id !== updated.id)]);
     setVersions(await api.listVersions(updated.id));
+    setAnalysis((await api.analyzeText(updated.text)).lines);
     setMessage(source);
   }
 
@@ -171,6 +174,21 @@ function App() {
     });
     setPhrases((items) => [phrase, ...items]);
     setMessage("Фраза сохранена в архив");
+  }
+
+  async function showRhymes(selected: string) {
+    const word = (selected.trim().split(/\s+/).pop() || "").replace(/[^\p{L}-]/gu, "");
+    if (!word) return;
+    const result = await api.findRhymes(word, text);
+    setToolResult(result.candidates);
+    setMessage(`Рифмы к слову: ${result.word}`);
+  }
+
+  async function showDraft(selected: string, modeName: string) {
+    if (!selected.trim()) return;
+    const result = await api.draft(selected, modeName);
+    setToolResult(result.variants);
+    setMessage(`Варианты: ${result.line_count} строк, форма сохранена`);
   }
 
   async function openPhrase(phrase: Phrase) {
@@ -350,8 +368,8 @@ function App() {
         <button onClick={() => selectedPoem && lockPoem()}><Lock size={16} /> Запаролить стих</button>
         <button onClick={deletePoem}><Trash2 size={16} /> Скрыть</button>
         {view === "deleted" && selectedPoem && <button onClick={() => restorePoem(selectedPoem)}><RotateCcw size={16} /> Восстановить</button>}
-        <button><Search size={16} /> Поиск рифмы</button>
-        <button><Wand2 size={16} /> ИИ трансформация</button>
+        <button onClick={() => showRhymes(text.split(/\s+/).at(-1) ?? "")}><Search size={16} /> Поиск рифмы</button>
+        <button onClick={() => showDraft(text, "transformation")}><Wand2 size={16} /> ИИ трансформация</button>
 
         <div className="label spaced">Версии</div>
         <div className="versions">
@@ -362,6 +380,26 @@ function App() {
             </button>
           ))}
         </div>
+        <div className="label spaced">Разбор</div>
+        <div className="analysis-list">
+          {analysis.slice(0, 8).map((line) => (
+            <div key={line.number}>
+              <span>{line.number}</span>
+              <strong>{line.syllables}</strong>
+              <small>{line.last_word ?? "нет слова"}</small>
+            </div>
+          ))}
+        </div>
+        {toolResult.length > 0 && (
+          <>
+            <div className="label spaced">Варианты</div>
+            <div className="tool-result">
+              {toolResult.map((item) => (
+                <button key={item} onClick={() => item.includes("\n") && setText(item)}>{item}</button>
+              ))}
+            </div>
+          </>
+        )}
         {message && <div className="status">{message}</div>}
       </aside>
 
@@ -369,9 +407,9 @@ function App() {
         <menu className="context-menu" style={{ left: contextMenu.x, top: contextMenu.y }}>
           <small>Выделено строк: {currentLineContract.count}</small>
           <button onClick={() => setMessage("Фрагмент отмечен как задуманный")}>Отметить как задумано</button>
-          <button onClick={() => setMessage("ИИ вернет столько же строк, сколько выделено")}>Рекомендация ИИ</button>
-          <button onClick={() => setMessage("Трансформация подготовит вариант без применения")}>ИИ трансформация</button>
-          <button onClick={() => setMessage("Поиск рифмы будет учитывать контекст")}>Найти рифму</button>
+          <button onClick={() => showDraft(contextMenu.selected, "recommendation")}>Рекомендация ИИ</button>
+          <button onClick={() => showDraft(contextMenu.selected, "transformation")}>ИИ трансформация</button>
+          <button onClick={() => showRhymes(contextMenu.selected)}>Найти рифму</button>
           <button onClick={() => savePhrase(contextMenu.selected)}>Сохранить как образ</button>
           <button onClick={() => setMessage("ИИ больше не будет трогать этот фрагмент")}>Запретить ИИ менять</button>
         </menu>
