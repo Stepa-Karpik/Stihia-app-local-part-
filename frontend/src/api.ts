@@ -1,4 +1,4 @@
-import type { AppSettings, LineAnalysis, Phrase, Poem, PoemVersion } from "./types";
+import type { AppSettings, LineAnalysis, ModelStatus, Phrase, Poem, PoemVersion } from "./types";
 
 const API_BASE_URL = import.meta.env.VITE_API_BASE_URL ?? "http://localhost:8000";
 
@@ -83,5 +83,10 @@ export const api = {
     request<{ line_count: number; variants: string[] }>("/api/text-tools/draft", {
       method: "POST",
       body: JSON.stringify({ text, mode })
+    }),
+  modelStatus: () => request<ModelStatus>("/api/system/models"),
+  flushTelegramOutbox: () =>
+    request<{ sent: number; failed: number }>("/api/system/telegram-outbox/flush", {
+      method: "POST"
     })
 };

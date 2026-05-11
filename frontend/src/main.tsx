@@ -16,7 +16,7 @@ import {
   Wand2
 } from "lucide-react";
 import { api } from "./api";
-import type { AppSettings, LineAnalysis, Phrase, Poem, PoemVersion, SpeechRecognizer } from "./types";
+import type { AppSettings, LineAnalysis, ModelStatus, Phrase, Poem, PoemVersion, SpeechRecognizer } from "./types";
 import "./styles.css";
 
 type View = "active" | "deleted" | "archive" | "settings";
@@ -70,6 +70,7 @@ function App() {
   const [voiceText, setVoiceText] = useState("");
   const [analysis, setAnalysis] = useState<LineAnalysis[]>([]);
   const [toolResult, setToolResult] = useState<string[]>([]);
+  const [modelStatus, setModelStatus] = useState<ModelStatus>({});
   const [isRecording, setIsRecording] = useState(false);
   const recognitionRef = useRef<any>(null);
   const editorRef = useRef<HTMLTextAreaElement>(null);
@@ -78,16 +79,18 @@ function App() {
   const currentLineContract = useMemo(() => lineRangeForSelection(text, contextMenu?.selected ?? ""), [text, contextMenu]);
 
   async function refresh() {
-    const [active, deleted, appSettings, archive] = await Promise.all([
+    const [active, deleted, appSettings, archive, models] = await Promise.all([
       api.listPoems(),
       api.listDeletedPoems(),
       api.getSettings().catch(() => DEFAULT_SETTINGS),
-      api.listPhrases().catch(() => [])
+      api.listPhrases().catch(() => []),
+      api.modelStatus().catch(() => ({}))
     ]);
     setPoems(active);
     setDeletedPoems(deleted);
     setSettings(appSettings);
     setPhrases(archive);
+    setModelStatus(models);
 
     if (!selectedPoem && active[0]) {
       selectPoem(active[0]);
@@ -160,6 +163,11 @@ function App() {
     const updated = await api.updateSettings(settings);
     setSettings(updated);
     setMessage("Настройки сохранены");
+  }
+
+  async function flushOutbox() {
+    const result = await api.flushTelegramOutbox();
+    setMessage(`Очередь Telegram: отправлено ${result.sent}, ошибок ${result.failed}`);
   }
 
   async function savePhrase(selected: string) {
@@ -322,6 +330,8 @@ function App() {
             setNewPassword={setNewPassword}
             saveSettings={saveSettings}
             changePassword={changePassword}
+            modelStatus={modelStatus}
+            flushOutbox={flushOutbox}
           />
         ) : selectedPoem ? (
           locked ? (
@@ -426,7 +436,9 @@ function SettingsView({
   newPassword,
   setNewPassword,
   saveSettings,
-  changePassword
+  changePassword,
+  modelStatus,
+  flushOutbox
 }: {
   settings: AppSettings;
   setSettings: (settings: AppSettings) => void;
@@ -436,6 +448,8 @@ function SettingsView({
   setNewPassword: (value: string) => void;
   saveSettings: () => void;
   changePassword: () => void;
+  modelStatus: ModelStatus;
+  flushOutbox: () => void;
 }) {
   function setRecognizer(value: string) {
     setSettings({ ...settings, speech_recognizer: value as SpeechRecognizer });
@@ -460,6 +474,22 @@ function SettingsView({
           <option value="browser">Браузерный алгоритм</option>
           <option value="silero_vad_only">Только Silero VAD</option>
         </select>
+      </section>
+      <section>
+        <h2>Модели</h2>
+        <div className="model-list">
+          {Object.entries(modelStatus).map(([name, status]) => (
+            <div key={name}>
+              <span>{name}</span>
+              <strong>{status.exists ? "найдена" : "нет"}</strong>
+              <small>{status.path}</small>
+            </div>
+          ))}
+        </div>
+      </section>
+      <section>
+        <h2>Telegram</h2>
+        <button onClick={flushOutbox}>Отправить очередь сейчас</button>
       </section>
       <section>
         <h2>Пароль профиля</h2>

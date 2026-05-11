@@ -7,6 +7,7 @@ from app.api.app_settings import router as app_settings_router
 from app.api.phrases import router as phrases_router
 from app.api.poems import router as poems_router
 from app.api.profile import router as profile_router
+from app.api.system import router as system_router
 from app.api.text_tools import router as text_tools_router
 from app.core.settings import AppSettings
 from app.db.session import create_session_factory, init_models
@@ -14,6 +15,7 @@ from app.services.app_settings_service import AppSettingsService
 from app.services.phrase_service import PhraseService
 from app.services.poem_service import PoemService
 from app.services.profile_service import ProfileService
+from app.services.telegram_outbox_service import TelegramOutboxService
 
 
 def create_app(database_url: str | None = None) -> FastAPI:
@@ -26,15 +28,22 @@ def create_app(database_url: str | None = None) -> FastAPI:
         yield
 
     app = FastAPI(title=settings.site_name, lifespan=lifespan)
+    app.state.settings = settings
     app.state.poem_service = PoemService(session_factory)
     app.state.profile_service = ProfileService(session_factory)
     app.state.phrase_service = PhraseService(session_factory)
     app.state.app_settings_service = AppSettingsService(session_factory)
+    app.state.telegram_outbox_service = TelegramOutboxService(
+        session_factory,
+        bot_server_url=settings.bot_server_url,
+        bot_server_token=settings.bot_server_token,
+    )
     app.include_router(poems_router)
     app.include_router(profile_router)
     app.include_router(phrases_router)
     app.include_router(app_settings_router)
     app.include_router(text_tools_router)
+    app.include_router(system_router)
 
     @app.get("/health")
     async def health() -> dict[str, str]:

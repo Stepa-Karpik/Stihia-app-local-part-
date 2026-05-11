@@ -45,3 +45,5 @@ export type LineAnalysis = {
   syllables: number;
   last_word: string | null;
 };
+
+export type ModelStatus = Record<string, { path: string; exists: boolean }>;

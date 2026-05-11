@@ -24,7 +24,7 @@ class TelegramOutboxService:
         self._session_factory = session_factory
         self._bot_server_url = bot_server_url.rstrip("/")
         self._bot_server_token = bot_server_token
-        self._http_client = http_client or httpx.AsyncClient(timeout=10)
+        self._http_client = http_client or httpx.AsyncClient(timeout=10, trust_env=False)
 
     async def flush_once(self) -> FlushResult:
         sent = 0

@@ -321,6 +321,29 @@ button {
   gap: 12px;
 }
 
+.model-list {
+  display: grid;
+  gap: 8px;
+}
+
+.model-list div {
+  display: grid;
+  grid-template-columns: 110px 70px 1fr;
+  gap: 12px;
+  align-items: baseline;
+  color: rgba(247, 247, 244, 0.68);
+  font-size: 13px;
+}
+
+.model-list strong {
+  color: rgba(247, 247, 244, 0.9);
+}
+
+.model-list small {
+  overflow-wrap: anywhere;
+  color: rgba(247, 247, 244, 0.42);
+}
+
 .settings-view label {
   display: grid;
   gap: 7px;
