@@ -49,6 +49,21 @@ function lineRangeForSelection(text: string, selectedText: string) {
   return { start, end: start + count - 1, count };
 }
 
+function offsetForLine(text: string, line: number) {
+  if (line <= 1) {
+    return 0;
+  }
+  let offset = 0;
+  for (let current = 1; current < line; current += 1) {
+    const nextBreak = text.indexOf("\n", offset);
+    if (nextBreak < 0) {
+      return text.length;
+    }
+    offset = nextBreak + 1;
+  }
+  return offset;
+}
+
 function App() {
   const [view, setView] = useState<View>("active");
   const [mode, setMode] = useState<Mode>("studio");
@@ -66,7 +81,7 @@ function App() {
   const [oldPassword, setOldPassword] = useState("");
   const [message, setMessage] = useState("");
   const [contextMenu, setContextMenu] = useState<{ x: number; y: number; selected: string } | null>(null);
-  const [highlight, setHighlight] = useState<{ stanza: number; line: number } | null>(null);
+  const [highlight, setHighlight] = useState<{ stanzaStart: number; stanzaEnd: number; lineStart: number; lineEnd: number } | null>(null);
   const [voiceText, setVoiceText] = useState("");
   const [analysis, setAnalysis] = useState<LineAnalysis[]>([]);
   const [toolResult, setToolResult] = useState<string[]>([]);
@@ -207,9 +222,33 @@ function App() {
     const poem = await api.getPoem(phrase.source.poem_id);
     await selectPoem(poem);
     setView("active");
-    const stanza = Math.ceil(phrase.source.start_line / 4);
-    setHighlight({ stanza, line: phrase.source.start_line });
-    setTimeout(() => setHighlight(null), 2600);
+    window.setTimeout(() => revealPhraseSource(poem.text, phrase.source.start_line, phrase.source.end_line), 40);
+  }
+
+  function revealPhraseSource(poemText: string, startLine: number, endLine: number) {
+    const editor = editorRef.current;
+    if (!editor) return;
+    const lineCount = poemText.split("\n").length;
+    const stanzaStart = Math.max(1, startLine - ((startLine - 1) % 4));
+    const stanzaEnd = Math.min(lineCount, stanzaStart + 3);
+    const lineHeight = settings.studio_font_size * 1.58;
+
+    editor.focus();
+    editor.scrollTo({
+      top: Math.max(0, (stanzaStart - 1) * lineHeight - editor.clientHeight * 0.24),
+      behavior: "smooth"
+    });
+
+    const selectLines = (from: number, to: number) => {
+      const start = offsetForLine(poemText, from);
+      const end = offsetForLine(poemText, to + 1);
+      editor.setSelectionRange(start, end);
+    };
+
+    setHighlight({ stanzaStart, stanzaEnd, lineStart: startLine, lineEnd: endLine });
+    selectLines(stanzaStart, stanzaEnd);
+    window.setTimeout(() => selectLines(startLine, endLine), 950);
+    window.setTimeout(() => setHighlight(null), 2800);
   }
 
   function exportMarkdown() {
