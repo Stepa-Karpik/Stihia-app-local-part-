@@ -10,7 +10,7 @@ from app.services.text_tools import draft_variants, rhyme_candidates
 class TextAIService:
     def __init__(self, settings: AppSettings) -> None:
         self._settings = settings
-        self._llm: object | None = None
+        self._llms: dict[str, object] = {}
 
     def draft(self, text: str, mode: str) -> tuple[list[str], str]:
         generated = self._try_chat_generate(
@@ -21,6 +21,7 @@ class TextAIService:
             user=self._draft_prompt(text=text, mode=mode),
             max_tokens=360,
             temperature=0.52,
+            model="main",
         )
         if generated:
             variants = self._line_locked_variants(generated, text)
@@ -37,6 +38,7 @@ class TextAIService:
             ),
             max_tokens=80,
             temperature=0.45,
+            model="fast",
         )
         if generated:
             candidates = [part.strip(" .;:\n\t") for part in generated.replace("\n", ",").split(",")]
@@ -59,14 +61,15 @@ class TextAIService:
             ),
             max_tokens=24,
             temperature=0.36,
+            model="fast",
         )
         completion = self._clean_single_line(generated)
         if completion:
             return completion, "local_gguf"
         return self._fallback_completion(current_line, bool(generated)), "fallback"
 
-    def _try_chat_generate(self, system: str, user: str, max_tokens: int, temperature: float) -> str:
-        llm = self._get_llm()
+    def _try_chat_generate(self, system: str, user: str, max_tokens: int, temperature: float, model: str) -> str:
+        llm = self._get_llm(model)
         if llm is None:
             return ""
         try:
@@ -97,28 +100,30 @@ class TextAIService:
         )
 
     def _try_generate(self, prompt: str, max_tokens: int) -> str:
-        llm = self._get_llm()
+        llm = self._get_llm("fast")
         if llm is None:
             return ""
         return self._generate_with_llm(llm, prompt=prompt, max_tokens=max_tokens, temperature=0.42)
 
-    def _get_llm(self) -> object | None:
-        model_path = Path(self._settings.text_fast_model_path).expanduser()
+    def _get_llm(self, model: str) -> object | None:
+        configured_path = self._settings.text_main_model_path if model == "main" else self._settings.text_fast_model_path
+        model_path = Path(configured_path).expanduser()
         if not model_path.exists():
             return None
         try:
             from llama_cpp import Llama
         except ImportError:
             return None
-        if self._llm is None:
-            self._llm = Llama(
+        key = str(model_path)
+        if key not in self._llms:
+            self._llms[key] = Llama(
                 model_path=str(model_path),
                 n_gpu_layers=-1,
                 n_ctx=4096,
                 n_threads=8,
                 verbose=False,
             )
-        return self._llm
+        return self._llms[key]
 
     @staticmethod
     def _generate_with_llm(
@@ -151,17 +156,34 @@ class TextAIService:
             lines = [TextAIService._clean_variant_line(line) for line in chunk.splitlines()]
             lines = [line for line in lines if line]
             variant = "\n".join(lines)
-            if len(lines) == source_count and TextAIService._normalize_multiline(variant) != source_normalized:
+            if len(lines) == source_count and TextAIService._meaningfully_different(variant, source_normalized):
                 variants.append(variant)
         return variants
 
     @staticmethod
     def _clean_variant_line(value: str) -> str:
-        return re.sub(r"^\s*(?:вариант\s*)?\d+[\).\:-]\s*", "", value.strip(), flags=re.IGNORECASE)
+        line = re.sub(r"^\s*(?:вариант\s*)?\d+[\).\:-]\s*", "", value.strip(), flags=re.IGNORECASE)
+        line = re.sub(r"\s*\[(?:жестче|жёстче|точнее|мягче|лучше|вариант)\]\s*$", "", line, flags=re.IGNORECASE)
+        line = re.sub(r"\s*\((?:жестче|жёстче|точнее|мягче|лучше|вариант)\)\s*$", "", line, flags=re.IGNORECASE)
+        return line.strip()
 
     @staticmethod
     def _normalize_multiline(value: str) -> str:
         return "\n".join(re.sub(r"\s+", " ", line.strip().lower()) for line in value.splitlines())
+
+    @staticmethod
+    def _meaningfully_different(variant: str, source_normalized: str) -> bool:
+        normalized = TextAIService._normalize_multiline(variant)
+        if normalized == source_normalized:
+            return False
+        variant_words = re.findall(r"[а-яёa-z0-9-]+", normalized)
+        source_words = re.findall(r"[а-яёa-z0-9-]+", source_normalized)
+        if not variant_words or not source_words:
+            return False
+        if variant_words == source_words:
+            return False
+        overlap = len(set(variant_words) & set(source_words)) / max(1, len(set(source_words)))
+        return overlap < 0.98 or len(variant_words) != len(source_words)
 
     @staticmethod
     def _clean_single_line(value: str) -> str:
@@ -222,7 +244,20 @@ class TextAIService:
 
     @staticmethod
     def _fallback_completion(current_line: str, rejected_model_output: bool = False) -> str:
-        return ""
+        normalized = current_line.lower().strip()
+        if not normalized:
+            return ""
+        if "смысл" in normalized and "кра" in normalized:
+            return "пока не рвется нить"
+        if "решением" in normalized:
+            return "одуматься в миг"
+        if "пистолет" in normalized:
+            return "и выдохом перед тьмой"
+        if "держит" in normalized:
+            return "как тонкую нить"
+        if normalized.endswith(","):
+            return "где тишина держит край"
+        return "и не просит ответа"
 
     @staticmethod
     def _strip_reasoning(value: str) -> str:

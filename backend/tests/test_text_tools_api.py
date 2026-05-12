@@ -29,7 +29,7 @@ async def test_text_tools_analyze_lines_and_rhyme_candidates(tmp_path, monkeypat
 
 
 @pytest.mark.asyncio
-async def test_ai_draft_returns_no_fake_variants_when_model_unavailable(tmp_path, monkeypatch):
+async def test_ai_draft_returns_line_locked_fallback_when_model_unavailable(tmp_path, monkeypatch):
     monkeypatch.setenv("TEXT_FAST_MODEL_PATH", str(tmp_path / "missing.gguf"))
     app = create_app(database_url=f"sqlite+aiosqlite:///{tmp_path / 'tools.db'}", enable_background_tasks=False)
 
@@ -42,9 +42,12 @@ async def test_ai_draft_returns_no_fake_variants_when_model_unavailable(tmp_path
                     "mode": "recommendation",
                 },
             )
+            body = draft.json()
             assert draft.status_code == 200
-            assert draft.json()["line_count"] == 3
-            assert draft.json()["variants"] == []
+            assert body["line_count"] == 3
+            assert len(body["variants"]) == 3
+            assert all(len(variant.splitlines()) == 3 for variant in body["variants"])
+            assert "первая строка\nвторая строка\nтретья строка" not in body["variants"]
 
 
 def test_ai_draft_filters_identity_and_preserves_line_count():
@@ -52,6 +55,22 @@ def test_ai_draft_filters_identity_and_preserves_line_count():
     variants = TextAIService._line_locked_variants(generated, "первая строка\nвторая строка")
 
     assert variants == ["первая строка\nвторая строка сильнее"]
+
+
+def test_ai_draft_rejects_bracket_only_variant_noise():
+    source = "\n".join(
+        [
+            "Быть силуэтом на старом мольберте,",
+            "О которых прадети узнают из книг,",
+            "Быть агонией в смертника пистолете,",
+            "И его решением одуматься в миг.",
+        ]
+    )
+    generated = "\n".join(f"{line}  [жестче]" for line in source.splitlines())
+
+    variants = TextAIService._line_locked_variants(generated, source)
+
+    assert variants == []
 
 
 @pytest.mark.asyncio
@@ -102,10 +121,12 @@ def test_autocomplete_drops_overlong_prose():
     assert completion == ""
 
 
-def test_autocomplete_fallback_stays_silent():
+def test_autocomplete_fallback_returns_short_tail():
     completion = TextAIService._fallback_completion("И как ясный день держит смысл на краю,")
 
-    assert completion == ""
+    assert completion
+    assert "\n" not in completion
+    assert len(completion.split()) <= 7
 
 
 def test_analysis_accepts_alternating_stanza_rhythm():

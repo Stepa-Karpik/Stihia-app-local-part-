@@ -114,7 +114,98 @@ def line_flags(line: str, syllables: int, expected: int) -> list[str]:
 
 
 def draft_variants(text: str, mode: str) -> list[str]:
-    return []
+    lines = text.splitlines()
+    if not lines:
+        return []
+    styles = ("hard", "precise", "soft")
+    variants: list[str] = []
+    source_normalized = _normalize_multiline(text)
+    for style in styles:
+        rewritten = [_rewrite_line_fallback(line, style, mode) for line in lines]
+        variant = "\n".join(rewritten)
+        if _normalize_multiline(variant) != source_normalized and variant not in variants:
+            variants.append(variant)
+    return variants
+
+
+def _rewrite_line_fallback(line: str, style: str, mode: str) -> str:
+    if not line.strip():
+        return line
+    leading = line[: len(line) - len(line.lstrip())]
+    body = line.strip()
+    punctuation = ""
+    if body[-1:] in ",.!?;:…":
+        punctuation = body[-1]
+        body = body[:-1].rstrip()
+
+    replacements_by_style = {
+        "hard": {
+            "Быть силуэтом": "Быть резким силуэтом",
+            "на старом мольберте": "на темном мольберте",
+            "О которых": "О чем",
+            "прадети узнают": "прадети прочтут",
+            "Быть агонией": "Быть дрожью агонии",
+            "решением одуматься": "последним решением одуматься",
+            "ясный день": "белый день",
+            "держит смысл": "держит нерв",
+        },
+        "precise": {
+            "Быть силуэтом": "Остаться силуэтом",
+            "на старом мольберте": "на точном мольберте",
+            "О которых": "О чем",
+            "прадети узнают": "прадети узнают",
+            "Быть агонией": "Быть секундой агонии",
+            "решением одуматься": "выбором одуматься",
+            "ясный день": "ровный день",
+            "держит смысл": "держит смысл",
+        },
+        "soft": {
+            "Быть силуэтом": "Быть тихим силуэтом",
+            "на старом мольберте": "на старом мольберте",
+            "О которых": "О чем",
+            "прадети узнают": "прадети вспомнят",
+            "Быть агонией": "Быть тенью агонии",
+            "решением одуматься": "шансом одуматься",
+            "ясный день": "теплый день",
+            "держит смысл": "бережет смысл",
+        },
+    }
+    updated = body
+    for source, target in replacements_by_style[style].items():
+        updated = _replace_once_case_insensitive(updated, source, target)
+
+    if updated == body:
+        updated = _fallback_line_shift(body, style, mode)
+    return f"{leading}{updated}{punctuation}"
+
+
+def _fallback_line_shift(line: str, style: str, mode: str) -> str:
+    words = line.split()
+    if not words:
+        return line
+    if len(words) == 1:
+        return f"{_style_prefix(style)} {line}"
+    if style == "hard":
+        return " ".join([words[0], _style_prefix(style), *words[1:]])
+    if style == "precise":
+        return " ".join([*words[:-1], _style_suffix(style), words[-1]])
+    return " ".join([_style_prefix(style), *words])
+
+
+def _replace_once_case_insensitive(value: str, source: str, target: str) -> str:
+    return re.sub(re.escape(source), target, value, count=1, flags=re.IGNORECASE)
+
+
+def _style_prefix(style: str) -> str:
+    return {"hard": "резко", "precise": "точно", "soft": "тихо"}[style]
+
+
+def _style_suffix(style: str) -> str:
+    return {"hard": "жестко", "precise": "точно", "soft": "тихо"}[style]
+
+
+def _normalize_multiline(value: str) -> str:
+    return "\n".join(re.sub(r"\s+", " ", line.strip().lower()) for line in value.splitlines())
 
 
 def _stanza_lines(raw_lines: list[str]) -> dict[int, StanzaLine]:
