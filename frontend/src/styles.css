@@ -144,9 +144,16 @@ button {
   overflow: auto;
 }
 
+.editor-head {
+  display: grid;
+  grid-template-columns: minmax(0, 1fr) auto;
+  align-items: start;
+  gap: 18px;
+}
+
 .title {
   width: 100%;
-  margin-bottom: 28px;
+  margin: 0;
   padding: 0;
   border: 0;
   outline: 0;
@@ -155,12 +162,83 @@ button {
   font-weight: 760;
 }
 
+.save-state {
+  margin-top: 7px;
+  color: rgba(247, 247, 244, 0.42);
+  font-size: 12px;
+  white-space: nowrap;
+}
+
+.save-state.saving,
+.save-state.local {
+  color: #ffd76a;
+}
+
+.save-state.error {
+  color: #ff7070;
+}
+
+.meter-strip {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 14px;
+  margin: 14px 0 26px;
+  color: rgba(247, 247, 244, 0.46);
+  font-size: 12px;
+}
+
+.meter-strip span {
+  white-space: nowrap;
+}
+
+.meter-strip .bad {
+  color: #ff7070;
+}
+
+.meter-strip .soft {
+  color: #ffd76a;
+}
+
 .poem-editor-wrap {
   position: relative;
   min-height: 54vh;
   overflow: hidden;
   font-family: Georgia, "Times New Roman", serif;
   line-height: 1.58;
+}
+
+.line-underlay {
+  position: absolute;
+  inset: 0;
+  z-index: 0;
+  pointer-events: none;
+  overflow: hidden;
+  font-family: Georgia, "Times New Roman", serif;
+  line-height: 1.58;
+  white-space: pre-wrap;
+}
+
+.line-underlay-row {
+  display: block;
+  width: 100%;
+  min-height: 1.58em;
+  background: transparent;
+}
+
+.line-underlay-row.rhythm {
+  background: linear-gradient(90deg, rgba(255, 82, 82, 0.24), rgba(255, 82, 82, 0.08) 44%, transparent 76%);
+}
+
+.line-underlay-row.near {
+  background: linear-gradient(90deg, rgba(255, 215, 106, 0.2), rgba(255, 215, 106, 0.06) 44%, transparent 76%);
+}
+
+.line-underlay-row.active {
+  background: linear-gradient(90deg, rgba(247, 247, 244, 0.18), rgba(247, 247, 244, 0.06) 52%, transparent 82%);
+}
+
+.line-underlay-row.stanza-active {
+  box-shadow: inset 3px 0 rgba(247, 247, 244, 0.28);
 }
 
 .poem-text,
@@ -256,12 +334,16 @@ button {
   gap: 7px;
 }
 
-.analysis-list div {
+.analysis-list button {
   display: grid;
-  grid-template-columns: 24px 42px 1fr;
+  grid-template-columns: 24px 54px minmax(0, 1fr) 54px;
   gap: 8px;
+  align-items: center;
+  min-height: 30px;
+  padding: 0;
   color: rgba(247, 247, 244, 0.6);
   font-size: 13px;
+  text-align: left;
 }
 
 .analysis-list strong {
@@ -269,11 +351,29 @@ button {
 }
 
 .analysis-list small {
+  overflow: hidden;
   color: rgba(247, 247, 244, 0.42);
+  text-overflow: ellipsis;
+  white-space: nowrap;
 }
 
-.analysis-list .warn strong,
-.analysis-list .warn small {
+.analysis-list em {
+  color: rgba(247, 247, 244, 0.38);
+  font-size: 11px;
+  font-style: normal;
+  text-align: right;
+  text-transform: uppercase;
+}
+
+.analysis-list .rhythm strong,
+.analysis-list .rhythm small,
+.analysis-list .rhythm em {
+  color: #ff7070;
+}
+
+.analysis-list .near strong,
+.analysis-list .near small,
+.analysis-list .near em {
   color: #ffd76a;
 }
 
@@ -406,6 +506,19 @@ button {
   display: grid;
   gap: 7px;
   color: rgba(247, 247, 244, 0.62);
+}
+
+.color-row {
+  display: grid;
+  grid-template-columns: 42px minmax(0, 1fr);
+  gap: 10px;
+}
+
+.color-row input[type="color"] {
+  width: 42px;
+  min-height: 38px;
+  padding: 0;
+  background: transparent;
 }
 
 .settings-view .checkbox-line {

@@ -97,7 +97,13 @@ async def create_poem(payload: PoemCreateRequest, request: Request) -> PoemRespo
 @router.put("/{poem_id}", response_model=PoemResponse)
 async def edit_poem(poem_id: str, payload: PoemUpdateRequest, request: Request) -> PoemResponse:
     try:
-        record = await poem_service(request).edit_poem(poem_id, payload.title, payload.text, now=datetime.now(UTC))
+        record = await poem_service(request).edit_poem(
+            poem_id,
+            payload.title,
+            payload.text,
+            now=datetime.now(UTC),
+            source=payload.source,
+        )
     except ValueError as exc:
         raise HTTPException(status_code=404, detail="Poem not found") from exc
     return PoemResponse.from_record(record)

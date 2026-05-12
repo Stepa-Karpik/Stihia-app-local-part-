@@ -55,7 +55,12 @@ export type LineAnalysis = {
   syllables: number;
   last_word: string | null;
   rhyme_tail: string | null;
+  rhyme_group: string | null;
+  rhyme_scheme: string;
+  rhythm_expected: number;
   rhythm_delta: number;
+  stanza_index: number;
+  line_in_stanza: number;
   flags: string[];
 };
 

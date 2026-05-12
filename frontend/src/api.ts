@@ -41,10 +41,10 @@ export const api = {
       method: "POST",
       body: JSON.stringify({ title, text })
     }),
-  updatePoem: (id: string, title: string, text: string) =>
+  updatePoem: (id: string, title: string, text: string, source: "manual" | "autosave" = "manual") =>
     request<Poem>(`/api/poems/${id}`, {
       method: "PUT",
-      body: JSON.stringify({ title, text })
+      body: JSON.stringify({ title, text, source })
     }),
   deletePoem: (id: string) => request<void>(`/api/poems/${id}`, { method: "DELETE" }),
   restorePoem: (id: string) => request<Poem>(`/api/poems/${id}/restore`, { method: "POST" }),

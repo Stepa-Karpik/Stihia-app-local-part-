@@ -26,3 +26,23 @@ async def test_poems_api_creates_edits_and_soft_deletes(tmp_path):
 
             assert active_list.json() == []
             assert len(deleted_list.json()) == 1
+
+
+@pytest.mark.asyncio
+async def test_autosave_updates_text_without_version_spam(tmp_path):
+    app = create_app(database_url=f"sqlite+aiosqlite:///{tmp_path / 'autosave.db'}", enable_background_tasks=False)
+
+    async with app.router.lifespan_context(app):
+        async with AsyncClient(transport=ASGITransport(app=app), base_url="http://test") as client:
+            created = await client.post("/api/poems", json={"title": "Черновик", "text": "первая"})
+            poem_id = created.json()["id"]
+
+            autosaved = await client.put(
+                f"/api/poems/{poem_id}",
+                json={"title": "Черновик", "text": "первая\nвторая", "source": "autosave"},
+            )
+            versions = await client.get(f"/api/poems/{poem_id}/versions")
+
+            assert autosaved.status_code == 200
+            assert autosaved.json()["text"] == "первая\nвторая"
+            assert len(versions.json()) == 1

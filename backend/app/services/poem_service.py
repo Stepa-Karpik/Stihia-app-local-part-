@@ -28,8 +28,9 @@ class PoemService:
             poem.title = title
             poem.text = text
             poem.updated_at = now
-            self._add_version(session, poem, now=now, source=source)
-            await self._upsert_outbox(session, poem, now=now)
+            if source != "autosave":
+                self._add_version(session, poem, now=now, source=source)
+                await self._upsert_outbox(session, poem, now=now)
             await session.commit()
             return poem
 

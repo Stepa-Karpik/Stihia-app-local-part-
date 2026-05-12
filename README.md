@@ -20,8 +20,16 @@ models/    локальные модели, не попадают в git
 
 ```bash
 cp .env.example .env
-docker compose up --build
+docker compose -f docker-compose.yml -f docker-compose.gpu.yml up -d --build
 ```
 
 Frontend: `http://localhost:5173`  
 Backend: `http://localhost:8000`
+
+Данные PostgreSQL и Redis пишутся в `./data`, чтобы не занимать `/var/lib/docker` сверх образов.
+
+ASR runtime тяжелый: он тянет Torch/CUDA. Для обычного запуска он выключен, а если нужен Qwen ASR/Whisper внутри backend-образа:
+
+```bash
+docker compose -f docker-compose.yml -f docker-compose.gpu.yml -f docker-compose.asr.yml up -d --build
+```

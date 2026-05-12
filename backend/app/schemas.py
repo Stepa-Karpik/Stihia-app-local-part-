@@ -11,6 +11,7 @@ class PoemCreateRequest(BaseModel):
 class PoemUpdateRequest(BaseModel):
     title: str = Field(min_length=1, max_length=240)
     text: str
+    source: str = Field(default="manual", pattern=r"^(manual|autosave)$")
 
 
 class PoemResponse(BaseModel):
@@ -152,8 +153,13 @@ class LineAnalysisResponse(BaseModel):
     syllables: int
     last_word: str | None
     rhyme_tail: str | None = None
+    rhyme_group: str | None = None
+    rhyme_scheme: str = ""
+    rhythm_expected: int = 0
     rhythm_delta: int = 0
-    flags: list[str] = []
+    stanza_index: int = 1
+    line_in_stanza: int = 1
+    flags: list[str] = Field(default_factory=list)
 
 
 class AnalyzeTextResponse(BaseModel):

@@ -3,10 +3,12 @@ import pytest
 
 from app.main import create_app
 from app.services.text_ai_service import TextAIService
+from app.services.text_tools import analyze_lines
 
 
 @pytest.mark.asyncio
-async def test_text_tools_analyze_lines_and_rhyme_candidates(tmp_path):
+async def test_text_tools_analyze_lines_and_rhyme_candidates(tmp_path, monkeypatch):
+    monkeypatch.setenv("TEXT_FAST_MODEL_PATH", str(tmp_path / "missing.gguf"))
     app = create_app(database_url=f"sqlite+aiosqlite:///{tmp_path / 'tools.db'}", enable_background_tasks=False)
 
     async with app.router.lifespan_context(app):
@@ -27,7 +29,8 @@ async def test_text_tools_analyze_lines_and_rhyme_candidates(tmp_path):
 
 
 @pytest.mark.asyncio
-async def test_ai_draft_preserves_selected_line_count(tmp_path):
+async def test_ai_draft_returns_no_fake_variants_when_model_unavailable(tmp_path, monkeypatch):
+    monkeypatch.setenv("TEXT_FAST_MODEL_PATH", str(tmp_path / "missing.gguf"))
     app = create_app(database_url=f"sqlite+aiosqlite:///{tmp_path / 'tools.db'}", enable_background_tasks=False)
 
     async with app.router.lifespan_context(app):
@@ -41,12 +44,19 @@ async def test_ai_draft_preserves_selected_line_count(tmp_path):
             )
             assert draft.status_code == 200
             assert draft.json()["line_count"] == 3
-            assert len(draft.json()["variants"]) == 3
-            assert all(len(variant.split("\n")) == 3 for variant in draft.json()["variants"])
+            assert draft.json()["variants"] == []
+
+
+def test_ai_draft_filters_identity_and_preserves_line_count():
+    generated = "1. первая строка\nвторая строка сильнее\n\n2. первая строка\nвторая строка"
+    variants = TextAIService._line_locked_variants(generated, "первая строка\nвторая строка")
+
+    assert variants == ["первая строка\nвторая строка сильнее"]
 
 
 @pytest.mark.asyncio
-async def test_autocomplete_returns_single_line_completion(tmp_path):
+async def test_autocomplete_returns_single_line_completion(tmp_path, monkeypatch):
+    monkeypatch.setenv("TEXT_FAST_MODEL_PATH", str(tmp_path / "missing.gguf"))
     app = create_app(database_url=f"sqlite+aiosqlite:///{tmp_path / 'tools.db'}", enable_background_tasks=False)
 
     async with app.router.lifespan_context(app):
@@ -79,6 +89,11 @@ def test_autocomplete_drops_instruction_echoes():
     assert completion == ""
 
 
+def test_autocomplete_drops_reasoning_tags():
+    assert TextAIService._clean_single_line("<think>") == ""
+    assert TextAIService._clean_single_line("<think>думаю</think>на краю") == "на краю"
+
+
 def test_autocomplete_drops_overlong_prose():
     completion = TextAIService._clean_single_line(
         "это слишком длинная прозаическая фраза без точного поэтического хвоста и без нормальной формы"
@@ -91,3 +106,53 @@ def test_autocomplete_fallback_stays_silent():
     completion = TextAIService._fallback_completion("И как ясный день держит смысл на краю,")
 
     assert completion == ""
+
+
+def test_analysis_accepts_alternating_stanza_rhythm():
+    text = "\n".join(
+        [
+            "а а а а а а а а а а а а а край",
+            "а а а а а а а а а а свет",
+            "а а а а а а а а а а а а а рай",
+            "а а а а а а а а а ответ",
+        ]
+    )
+
+    lines = analyze_lines(text)
+
+    assert [line.syllables for line in lines] == [14, 11, 14, 11]
+    assert [line.rhythm_expected for line in lines] == [14, 11, 14, 11]
+    assert all("rhythm" not in line.flags for line in lines)
+    assert [line.rhyme_group for line in lines] == ["A", "B", "A", "B"]
+    assert {line.rhyme_scheme for line in lines} == {"ABAB"}
+
+
+def test_analysis_flags_real_break_in_alternating_stanza():
+    text = "\n".join(
+        [
+            "а а а а а а а а а а а а а край",
+            "а а а а а а а а а а свет",
+            "а а а а а рай",
+            "а а а а а а а а а ответ",
+        ]
+    )
+
+    lines = analyze_lines(text)
+
+    assert lines[2].rhythm_expected == 14
+    assert "rhythm" in lines[2].flags
+
+
+def test_analysis_marks_near_rhythm_as_soft_warning():
+    text = "\n".join(
+        [
+            "а а а а а а а а край",
+            "а а а а а а а а свет",
+            "а а а а а а а а а а море",
+        ]
+    )
+
+    lines = analyze_lines(text)
+
+    assert lines[2].rhythm_expected == 10
+    assert lines[2].flags == ["near_rhythm"]

@@ -31,6 +31,8 @@ import "./styles.css";
 type View = "active" | "deleted" | "archive" | "settings";
 type Mode = "studio" | "idle";
 type AutocompleteScope = "personal" | "general";
+type SaveState = "saved" | "editing" | "saving" | "local" | "error";
+type LineRange = { start: number; end: number; count: number };
 
 const DEFAULT_SETTINGS: AppSettings = {
   studio_background: "#050505",
@@ -55,14 +57,26 @@ function formatBytes(value: number) {
   return `${(value / 1024 ** index).toFixed(index === 0 ? 0 : 1)} ${units[index]}`;
 }
 
-function lineRangeForSelection(text: string, selectedText: string) {
+function lineRangeForSelection(text: string, selectedText: string): LineRange {
   const index = selectedText ? text.indexOf(selectedText) : -1;
   if (index < 0) {
     return { start: 1, end: 1, count: 1 };
   }
-  const before = text.slice(0, index);
+  return lineRangeForOffsets(text, index, index + selectedText.length);
+}
+
+function lineRangeForOffsets(text: string, startOffset: number, endOffset: number): LineRange {
+  if (endOffset < startOffset) {
+    return lineRangeForOffsets(text, endOffset, startOffset);
+  }
+  if (startOffset === endOffset) {
+    const line = text.slice(0, startOffset).split("\n").length;
+    return { start: line, end: line, count: 1 };
+  }
+  const before = text.slice(0, startOffset);
   const start = before.split("\n").length;
-  const count = Math.max(1, selectedText.split("\n").length);
+  const selected = text.slice(startOffset, endOffset);
+  const count = Math.max(1, selected.split("\n").length);
   return { start, end: start + count - 1, count };
 }
 
@@ -83,6 +97,24 @@ function completionTextForInsert(value: string, cursor: number, completion: stri
   return ` ${trimmed}`;
 }
 
+function draftKey(poemId: string) {
+  return `stihia.draft.${poemId}`;
+}
+
+function readDraft(poem: Poem): { title: string; text: string; localUpdatedAt: string } | null {
+  const raw = localStorage.getItem(draftKey(poem.id));
+  if (!raw) return null;
+  try {
+    const parsed = JSON.parse(raw) as { title?: string; text?: string; localUpdatedAt?: string; serverUpdatedAt?: string };
+    if (!parsed.title || parsed.text === undefined || !parsed.localUpdatedAt) return null;
+    if (parsed.serverUpdatedAt && new Date(parsed.serverUpdatedAt) >= new Date(parsed.localUpdatedAt)) return null;
+    if (parsed.title === poem.title && parsed.text === poem.text) return null;
+    return { title: parsed.title, text: parsed.text, localUpdatedAt: parsed.localUpdatedAt };
+  } catch {
+    return null;
+  }
+}
+
 function offsetForLine(text: string, line: number) {
   if (line <= 1) {
     return 0;
@@ -96,6 +128,29 @@ function offsetForLine(text: string, line: number) {
     offset = nextBreak + 1;
   }
   return offset;
+}
+
+function saveStateLabel(state: SaveState, lastSavedAt: string | null) {
+  if (state === "saving") return "сохраняю";
+  if (state === "editing") return "черновик";
+  if (state === "local") return "локально";
+  if (state === "error") return "ошибка";
+  return lastSavedAt ? `сохранено ${formatDate(lastSavedAt)}` : "сохранено";
+}
+
+function lineTone(line: LineAnalysis | undefined) {
+  if (!line || line.flags.includes("empty")) return "empty";
+  if (line.flags.includes("rhythm")) return "rhythm";
+  if (line.flags.includes("near_rhythm")) return "near";
+  if (line.rhyme_group) return "clean";
+  return "plain";
+}
+
+function lineIssueLabel(line: LineAnalysis) {
+  if (line.flags.includes("rhythm")) return "сбит";
+  if (line.flags.includes("near_rhythm")) return "спорно";
+  if (line.rhyme_group) return line.rhyme_group;
+  return "нет";
 }
 
 function App() {
@@ -115,7 +170,9 @@ function App() {
   const [newPassword, setNewPassword] = useState("");
   const [oldPassword, setOldPassword] = useState("");
   const [message, setMessage] = useState("");
-  const [contextMenu, setContextMenu] = useState<{ x: number; y: number; selected: string } | null>(null);
+  const [saveState, setSaveState] = useState<SaveState>("saved");
+  const [lastSavedAt, setLastSavedAt] = useState<string | null>(null);
+  const [contextMenu, setContextMenu] = useState<{ x: number; y: number; selected: string; start: number; end: number } | null>(null);
   const [highlight, setHighlight] = useState<{ stanzaStart: number; stanzaEnd: number; lineStart: number; lineEnd: number } | null>(null);
   const [voiceText, setVoiceText] = useState("");
   const [analysis, setAnalysis] = useState<LineAnalysis[]>([]);
@@ -137,7 +194,21 @@ function App() {
   const editorRef = useRef<HTMLTextAreaElement>(null);
 
   const locked = selectedPoem?.is_locked && !sessionUnlocked;
-  const currentLineContract = useMemo(() => lineRangeForSelection(text, contextMenu?.selected ?? ""), [text, contextMenu]);
+  const currentLineContract = useMemo(
+    () => (contextMenu ? lineRangeForOffsets(text, contextMenu.start, contextMenu.end) : { start: 1, end: 1, count: 1 }),
+    [text, contextMenu]
+  );
+  const analysisSummary = useMemo(() => {
+    const hardIssues = analysis.filter((line) => line.flags.includes("rhythm")).length;
+    const softIssues = analysis.filter((line) => line.flags.includes("near_rhythm")).length;
+    const schemes = Array.from(new Set(analysis.map((line) => line.rhyme_scheme).filter(Boolean)));
+    return {
+      hardIssues,
+      softIssues,
+      scheme: schemes[0] ?? "нет схемы",
+      lines: analysis.filter((line) => line.text.trim()).length
+    };
+  }, [analysis]);
 
   useEffect(() => {
     localStorage.setItem("stihia.autocomplete", autocompleteEnabled ? "on" : "off");
@@ -167,12 +238,16 @@ function App() {
   }
 
   async function selectPoem(poem: Poem) {
+    const draft = readDraft(poem);
     setSelectedPoem(poem);
-    setTitle(poem.title);
-    setText(poem.text);
+    setTitle(draft?.title ?? poem.title);
+    setText(draft?.text ?? poem.text);
+    setSaveState(draft ? "local" : "saved");
+    setLastSavedAt(poem.updated_at);
+    setMessage(draft ? "Восстановлен локальный черновик. Автосохранение отправит его в базу." : "");
     setVersions(await api.listVersions(poem.id).catch(() => []));
     setProtectedFragments(await api.listProtectedFragments(poem.id).catch(() => []));
-    setAnalysis((await api.analyzeText(poem.text).catch(() => ({ lines: [] }))).lines);
+    setAnalysis((await api.analyzeText(draft?.text ?? poem.text).catch(() => ({ lines: [] }))).lines);
     setView(poem.is_deleted ? "deleted" : "active");
   }
 
@@ -184,11 +259,15 @@ function App() {
 
   async function savePoem(source = "Сохранено") {
     if (!selectedPoem || locked) return;
-    const updated = await api.updatePoem(selectedPoem.id, title, text);
+    setSaveState("saving");
+    const updated = await api.updatePoem(selectedPoem.id, title, text, "manual");
     setSelectedPoem(updated);
     setPoems((items) => [updated, ...items.filter((item) => item.id !== updated.id)]);
     setVersions(await api.listVersions(updated.id));
     setAnalysis((await api.analyzeText(updated.text)).lines);
+    localStorage.removeItem(draftKey(updated.id));
+    setSaveState("saved");
+    setLastSavedAt(updated.updated_at);
     setMessage(source);
   }
 
@@ -240,9 +319,8 @@ function App() {
     setMessage(`Очередь Telegram: отправлено ${result.sent}, ошибок ${result.failed}`);
   }
 
-  async function savePhrase(selected: string) {
+  async function savePhrase(selected: string, range = lineRangeForSelection(text, selected)) {
     if (!selectedPoem || !selected.trim()) return;
-    const range = lineRangeForSelection(text, selected);
     const phrase = await api.createPhrase({
       text: selected.trim(),
       poem_id: selectedPoem.id,
@@ -254,9 +332,8 @@ function App() {
     setMessage("Фраза сохранена в архив");
   }
 
-  async function protectSelection(selected: string, kind: "intended" | "locked") {
+  async function protectSelection(selected: string, kind: "intended" | "locked", range = lineRangeForSelection(text, selected)) {
     if (!selectedPoem || !selected.trim()) return;
-    const range = lineRangeForSelection(text, selected);
     const fragment = await api.createProtectedFragment(selectedPoem.id, {
       text: selected.trim(),
       start_line: range.start,
@@ -279,7 +356,11 @@ function App() {
     if (!selected.trim()) return;
     const result = await api.draft(selected, modeName);
     setToolResult(result.variants);
-    setMessage(`Варианты: ${result.line_count} строк, форма сохранена`);
+    setMessage(
+      result.variants.length
+        ? `Варианты: ${result.line_count} строк, форма сохранена`
+        : "ИИ не дал качественный вариант. Исходник не меняю."
+    );
   }
 
   async function openPhrase(phrase: Phrase) {
@@ -341,10 +422,28 @@ function App() {
     setEditorScrollTop(editor.scrollTop);
   }
 
+  function selectEditorLine(lineNumber: number) {
+    if (!editorRef.current) return;
+    const start = offsetForLine(text, lineNumber);
+    const end = offsetForLine(text, lineNumber + 1);
+    const lineHeight = settings.studio_font_size * 1.58;
+    editorRef.current.focus();
+    editorRef.current.scrollTo({
+      top: Math.max(0, (lineNumber - 1) * lineHeight - editorRef.current.clientHeight * 0.36),
+      behavior: "smooth"
+    });
+    editorRef.current.setSelectionRange(start, end);
+    setEditorCursor(end);
+    setHighlight({ stanzaStart: lineNumber, stanzaEnd: lineNumber, lineStart: lineNumber, lineEnd: lineNumber });
+    window.setTimeout(() => setHighlight(null), 1400);
+  }
+
   function openContextMenu(event: React.MouseEvent<HTMLTextAreaElement>) {
     event.preventDefault();
-    const selected = window.getSelection()?.toString() || text.slice(event.currentTarget.selectionStart, event.currentTarget.selectionEnd);
-    setContextMenu({ x: event.clientX, y: event.clientY, selected });
+    const start = event.currentTarget.selectionStart;
+    const end = event.currentTarget.selectionEnd;
+    const selected = text.slice(start, end) || window.getSelection()?.toString() || "";
+    setContextMenu({ x: event.clientX, y: event.clientY, selected, start, end });
   }
 
   async function startVoice() {
@@ -445,6 +544,36 @@ function App() {
   }, []);
 
   useEffect(() => {
+    if (!selectedPoem || locked || view === "settings") return;
+    const changed = title !== selectedPoem.title || text !== selectedPoem.text;
+    if (!changed) {
+      setSaveState("saved");
+      return;
+    }
+    setSaveState((state) => (state === "local" ? "local" : "editing"));
+    const localUpdatedAt = new Date().toISOString();
+    localStorage.setItem(
+      draftKey(selectedPoem.id),
+      JSON.stringify({ title, text, localUpdatedAt, serverUpdatedAt: selectedPoem.updated_at })
+    );
+    const timeout = window.setTimeout(async () => {
+      try {
+        setSaveState("saving");
+        const updated = await api.updatePoem(selectedPoem.id, title, text, "autosave");
+        setSelectedPoem(updated);
+        setPoems((items) => [updated, ...items.filter((item) => item.id !== updated.id)]);
+        setAnalysis((await api.analyzeText(updated.text)).lines);
+        localStorage.removeItem(draftKey(updated.id));
+        setLastSavedAt(updated.updated_at);
+        setSaveState("saved");
+      } catch {
+        setSaveState("local");
+      }
+    }, 1400);
+    return () => window.clearTimeout(timeout);
+  }, [title, text, selectedPoem?.id, selectedPoem?.title, selectedPoem?.text, locked, view]);
+
+  useEffect(() => {
     if (!autocompleteEnabled || !selectedPoem || locked || view === "settings") {
       setCompletion(null);
       return;
@@ -472,11 +601,15 @@ function App() {
   const visiblePoems = view === "deleted" ? deletedPoems : poems;
   const inlineCompletion =
     completion && completion.cursor === editorCursor ? completionTextForInsert(text, editorCursor, completion.text) : "";
+  const editorLines = text.split("\n");
 
   return (
     <main
       className={mode === "idle" ? "shell idle" : "shell"}
-      style={{ background: settings.studio_background, color: settings.studio_text }}
+      style={{
+        background: mode === "idle" ? "#000000" : settings.studio_background,
+        color: mode === "idle" ? "#f7f7f4" : settings.studio_text
+      }}
       onClick={() => setContextMenu(null)}
     >
       <header className="topbar">
@@ -557,8 +690,52 @@ function App() {
             </div>
           ) : (
             <>
-              <input className="title" value={title} onChange={(event) => setTitle(event.target.value)} />
-              <div className={highlight ? "poem-editor-wrap highlighted" : "poem-editor-wrap"}>
+              <div className="editor-head">
+                <input
+                  className="title"
+                  value={title}
+                  onChange={(event) => {
+                    setTitle(event.target.value);
+                    setSaveState("editing");
+                  }}
+                />
+                <span className={`save-state ${saveState}`}>{saveStateLabel(saveState, lastSavedAt)}</span>
+              </div>
+              <div className="meter-strip" aria-label="Сводка разбора">
+                <span>{analysisSummary.lines} строк</span>
+                <span>рифма {analysisSummary.scheme}</span>
+                <span className={analysisSummary.hardIssues ? "bad" : ""}>
+                  {analysisSummary.hardIssues ? `сбито ${analysisSummary.hardIssues}` : "ритм держится"}
+                </span>
+                {analysisSummary.softIssues > 0 && <span className="soft">спорно {analysisSummary.softIssues}</span>}
+              </div>
+              <div
+                className={highlight ? "poem-editor-wrap highlighted" : "poem-editor-wrap"}
+                style={{ fontSize: settings.studio_font_size }}
+              >
+                <div
+                  className="line-underlay"
+                  style={{
+                    fontSize: settings.studio_font_size,
+                    transform: `translateY(${-editorScrollTop}px)`
+                  }}
+                  aria-hidden="true"
+                >
+                  {editorLines.map((line, index) => {
+                    const lineNumber = index + 1;
+                    const item = analysis[index];
+                    const stanzaActive =
+                      !!highlight && lineNumber >= highlight.stanzaStart && lineNumber <= highlight.stanzaEnd;
+                    const lineActive =
+                      !!highlight && lineNumber >= highlight.lineStart && lineNumber <= highlight.lineEnd;
+                    return (
+                      <span
+                        key={`${lineNumber}-${line.length}`}
+                        className={`line-underlay-row ${lineTone(item)} ${stanzaActive ? "stanza-active" : ""} ${lineActive ? "active" : ""}`}
+                      />
+                    );
+                  })}
+                </div>
                 <pre
                   className="autocomplete-ghost"
                   style={{
@@ -577,6 +754,7 @@ function App() {
                   value={text}
                   onChange={(event) => {
                     setText(event.target.value);
+                    setSaveState("editing");
                     setCompletion(null);
                     syncEditorCursor(event.currentTarget);
                   }}
@@ -633,12 +811,21 @@ function App() {
         </div>
         <div className="label spaced">Разбор</div>
         <div className="analysis-list">
-          {analysis.slice(0, 8).map((line) => (
-            <div key={line.number} className={line.flags.includes("rhythm") ? "warn" : ""}>
+          {analysis.map((line) => (
+            <button
+              key={line.number}
+              className={lineTone(line)}
+              onClick={() => selectEditorLine(line.number)}
+              title="Перейти к строке"
+            >
               <span>{line.number}</span>
-              <strong>{line.syllables}{line.rhythm_delta ? `/${line.rhythm_delta > 0 ? "+" : ""}${line.rhythm_delta}` : ""}</strong>
-              <small>{line.rhyme_tail ?? line.last_word ?? "нет слова"}</small>
-            </div>
+              <strong>
+                {line.syllables}
+                {line.rhythm_expected ? `/${line.rhythm_expected}` : ""}
+              </strong>
+              <small>{line.rhyme_scheme || line.rhyme_tail || line.last_word || "нет слова"}</small>
+              <em>{lineIssueLabel(line)}</em>
+            </button>
           ))}
         </div>
         {protectedFragments.length > 0 && (
@@ -670,12 +857,12 @@ function App() {
       {contextMenu && (
         <menu className="context-menu" style={{ left: contextMenu.x, top: contextMenu.y }}>
           <small>Выделено строк: {currentLineContract.count}</small>
-          <button onClick={() => protectSelection(contextMenu.selected, "intended")}>Отметить как задумано</button>
+          <button onClick={() => protectSelection(contextMenu.selected, "intended", currentLineContract)}>Отметить как задумано</button>
           <button onClick={() => showDraft(contextMenu.selected, "recommendation")}>Рекомендация ИИ</button>
           <button onClick={() => showDraft(contextMenu.selected, "transformation")}>ИИ трансформация</button>
           <button onClick={() => showRhymes(contextMenu.selected)}>Найти рифму</button>
-          <button onClick={() => savePhrase(contextMenu.selected)}>Сохранить как образ</button>
-          <button onClick={() => protectSelection(contextMenu.selected, "locked")}>Запретить ИИ менять</button>
+          <button onClick={() => savePhrase(contextMenu.selected, currentLineContract)}>Сохранить как образ</button>
+          <button onClick={() => protectSelection(contextMenu.selected, "locked", currentLineContract)}>Запретить ИИ менять</button>
         </menu>
       )}
     </main>
@@ -722,8 +909,20 @@ function SettingsView({
       <h1>Настройки</h1>
       <section>
         <h2>Вид редактора</h2>
-        <label>Фон Studio<input value={settings.studio_background} onChange={(event) => setSettings({ ...settings, studio_background: event.target.value })} /></label>
-        <label>Текст Studio<input value={settings.studio_text} onChange={(event) => setSettings({ ...settings, studio_text: event.target.value })} /></label>
+        <label>
+          Фон Studio
+          <span className="color-row">
+            <input type="color" value={settings.studio_background} onChange={(event) => setSettings({ ...settings, studio_background: event.target.value })} />
+            <input value={settings.studio_background} onChange={(event) => setSettings({ ...settings, studio_background: event.target.value })} />
+          </span>
+        </label>
+        <label>
+          Текст Studio
+          <span className="color-row">
+            <input type="color" value={settings.studio_text} onChange={(event) => setSettings({ ...settings, studio_text: event.target.value })} />
+            <input value={settings.studio_text} onChange={(event) => setSettings({ ...settings, studio_text: event.target.value })} />
+          </span>
+        </label>
         <label>Размер текста<input type="range" min="16" max="34" value={settings.studio_font_size} onChange={(event) => setSettings({ ...settings, studio_font_size: Number(event.target.value) })} /></label>
         <p className="preview" style={{ fontSize: settings.studio_font_size }}>Предпросмотр строки в редакторе</p>
         <button className="primary" onClick={saveSettings}>Сохранить настройки</button>
