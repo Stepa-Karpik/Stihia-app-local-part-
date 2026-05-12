@@ -3,7 +3,7 @@ from datetime import datetime
 from sqlalchemy import select
 from sqlalchemy.ext.asyncio import AsyncSession, async_sessionmaker
 
-from app.db.models import PoemRecord, PoemVersionRecord, TelegramOutboxRecord
+from app.db.models import PoemRecord, PoemVersionRecord, ProtectedFragmentRecord, TelegramOutboxRecord
 
 
 class PoemService:
@@ -84,6 +84,40 @@ class PoemService:
                 select(PoemVersionRecord)
                 .where(PoemVersionRecord.poem_id == poem_id)
                 .order_by(PoemVersionRecord.created_at.asc())
+            )
+            return list(result.scalars())
+
+    async def create_protected_fragment(
+        self,
+        poem_id: str,
+        text: str,
+        start_line: int,
+        end_line: int,
+        kind: str,
+        now: datetime,
+    ) -> ProtectedFragmentRecord:
+        async with self._session_factory() as session:
+            poem = await session.get(PoemRecord, poem_id)
+            if poem is None:
+                raise ValueError("Poem not found")
+            fragment = ProtectedFragmentRecord(
+                poem_id=poem_id,
+                text=text,
+                start_line=start_line,
+                end_line=end_line,
+                kind=kind,
+                created_at=now,
+            )
+            session.add(fragment)
+            await session.commit()
+            return fragment
+
+    async def list_protected_fragments(self, poem_id: str) -> list[ProtectedFragmentRecord]:
+        async with self._session_factory() as session:
+            result = await session.execute(
+                select(ProtectedFragmentRecord)
+                .where(ProtectedFragmentRecord.poem_id == poem_id)
+                .order_by(ProtectedFragmentRecord.created_at.asc())
             )
             return list(result.scalars())
 

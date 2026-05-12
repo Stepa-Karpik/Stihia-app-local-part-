@@ -57,6 +57,35 @@ class PoemVersionResponse(BaseModel):
         )
 
 
+class ProtectedFragmentCreateRequest(BaseModel):
+    text: str = Field(min_length=1)
+    start_line: int = Field(ge=1)
+    end_line: int = Field(ge=1)
+    kind: str = Field(pattern=r"^(intended|locked)$")
+
+
+class ProtectedFragmentResponse(BaseModel):
+    id: str
+    poem_id: str
+    text: str
+    start_line: int
+    end_line: int
+    kind: str
+    created_at: datetime
+
+    @classmethod
+    def from_record(cls, record: object) -> "ProtectedFragmentResponse":
+        return cls(
+            id=record.id,
+            poem_id=record.poem_id,
+            text=record.text,
+            start_line=record.start_line,
+            end_line=record.end_line,
+            kind=record.kind,
+            created_at=record.created_at,
+        )
+
+
 class PasswordChangeRequest(BaseModel):
     old_password: str | None = None
     new_password: str = Field(min_length=6)

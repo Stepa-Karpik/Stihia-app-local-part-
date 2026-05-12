@@ -20,6 +20,16 @@ export type PoemVersion = {
   source: string;
 };
 
+export type ProtectedFragment = {
+  id: string;
+  poem_id: string;
+  text: string;
+  start_line: number;
+  end_line: number;
+  kind: "intended" | "locked";
+  created_at: string;
+};
+
 export type Phrase = {
   id: string;
   text: string;

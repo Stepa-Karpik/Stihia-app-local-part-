@@ -6,6 +6,7 @@ import type {
   Phrase,
   Poem,
   PoemVersion,
+  ProtectedFragment,
   SpeechTranscription
 } from "./types";
 
@@ -49,6 +50,15 @@ export const api = {
   restorePoem: (id: string) => request<Poem>(`/api/poems/${id}/restore`, { method: "POST" }),
   lockPoem: (id: string) => request<Poem>(`/api/poems/${id}/lock`, { method: "POST" }),
   listVersions: (id: string) => request<PoemVersion[]>(`/api/poems/${id}/versions`),
+  listProtectedFragments: (id: string) => request<ProtectedFragment[]>(`/api/poems/${id}/protected-fragments`),
+  createProtectedFragment: (
+    id: string,
+    payload: { text: string; start_line: number; end_line: number; kind: "intended" | "locked" }
+  ) =>
+    request<ProtectedFragment>(`/api/poems/${id}/protected-fragments`, {
+      method: "POST",
+      body: JSON.stringify(payload)
+    }),
   exportMarkdownUrl: (id: string) => `${API_BASE_URL}/api/poems/${id}/export.md`,
   changePassword: (oldPassword: string | null, newPassword: string) =>
     request<{ changed: boolean }>("/api/profile/password", {

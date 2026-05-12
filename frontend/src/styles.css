@@ -235,6 +235,7 @@ button {
 }
 
 .analysis-list,
+.protected-list,
 .tool-result {
   display: grid;
   gap: 7px;
@@ -266,6 +267,23 @@ button {
   justify-content: flex-start;
   white-space: pre-wrap;
   text-align: left;
+  color: rgba(247, 247, 244, 0.72);
+}
+
+.protected-list button {
+  display: grid;
+  gap: 4px;
+  padding: 6px 0;
+  text-align: left;
+}
+
+.protected-list span {
+  color: rgba(247, 247, 244, 0.42);
+  font-size: 11px;
+  text-transform: uppercase;
+}
+
+.protected-list small {
   color: rgba(247, 247, 244, 0.72);
 }
 

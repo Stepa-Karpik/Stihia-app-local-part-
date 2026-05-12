@@ -16,7 +16,16 @@ import {
   Wand2
 } from "lucide-react";
 import { api } from "./api";
-import type { AppSettings, LineAnalysis, ModelStatus, Phrase, Poem, PoemVersion, SpeechRecognizer } from "./types";
+import type {
+  AppSettings,
+  LineAnalysis,
+  ModelStatus,
+  Phrase,
+  Poem,
+  PoemVersion,
+  ProtectedFragment,
+  SpeechRecognizer
+} from "./types";
 import "./styles.css";
 
 type View = "active" | "deleted" | "archive" | "settings";
@@ -86,6 +95,7 @@ function App() {
   const [title, setTitle] = useState("");
   const [text, setText] = useState("");
   const [versions, setVersions] = useState<PoemVersion[]>([]);
+  const [protectedFragments, setProtectedFragments] = useState<ProtectedFragment[]>([]);
   const [phrases, setPhrases] = useState<Phrase[]>([]);
   const [settings, setSettings] = useState<AppSettings>(DEFAULT_SETTINGS);
   const [sessionUnlocked, setSessionUnlocked] = useState(false);
@@ -147,6 +157,7 @@ function App() {
     setTitle(poem.title);
     setText(poem.text);
     setVersions(await api.listVersions(poem.id).catch(() => []));
+    setProtectedFragments(await api.listProtectedFragments(poem.id).catch(() => []));
     setAnalysis((await api.analyzeText(poem.text).catch(() => ({ lines: [] }))).lines);
     setView(poem.is_deleted ? "deleted" : "active");
   }
@@ -227,6 +238,19 @@ function App() {
     });
     setPhrases((items) => [phrase, ...items]);
     setMessage("Фраза сохранена в архив");
+  }
+
+  async function protectSelection(selected: string, kind: "intended" | "locked") {
+    if (!selectedPoem || !selected.trim()) return;
+    const range = lineRangeForSelection(text, selected);
+    const fragment = await api.createProtectedFragment(selectedPoem.id, {
+      text: selected.trim(),
+      start_line: range.start,
+      end_line: range.end,
+      kind
+    });
+    setProtectedFragments((items) => [fragment, ...items]);
+    setMessage(kind === "intended" ? "Фрагмент отмечен как задуманный" : "ИИ не будет менять этот фрагмент");
   }
 
   async function showRhymes(selected: string) {
@@ -580,6 +604,19 @@ function App() {
             </div>
           ))}
         </div>
+        {protectedFragments.length > 0 && (
+          <>
+            <div className="label spaced">Не трогать</div>
+            <div className="protected-list">
+              {protectedFragments.slice(0, 6).map((fragment) => (
+                <button key={fragment.id} onClick={() => revealPhraseSource(text, fragment.start_line, fragment.end_line)}>
+                  <span>{fragment.kind === "intended" ? "задумано" : "запрет"}</span>
+                  <small>{fragment.text}</small>
+                </button>
+              ))}
+            </div>
+          </>
+        )}
         {toolResult.length > 0 && (
           <>
             <div className="label spaced">Варианты</div>
@@ -596,12 +633,12 @@ function App() {
       {contextMenu && (
         <menu className="context-menu" style={{ left: contextMenu.x, top: contextMenu.y }}>
           <small>Выделено строк: {currentLineContract.count}</small>
-          <button onClick={() => setMessage("Фрагмент отмечен как задуманный")}>Отметить как задумано</button>
+          <button onClick={() => protectSelection(contextMenu.selected, "intended")}>Отметить как задумано</button>
           <button onClick={() => showDraft(contextMenu.selected, "recommendation")}>Рекомендация ИИ</button>
           <button onClick={() => showDraft(contextMenu.selected, "transformation")}>ИИ трансформация</button>
           <button onClick={() => showRhymes(contextMenu.selected)}>Найти рифму</button>
           <button onClick={() => savePhrase(contextMenu.selected)}>Сохранить как образ</button>
-          <button onClick={() => setMessage("ИИ больше не будет трогать этот фрагмент")}>Запретить ИИ менять</button>
+          <button onClick={() => protectSelection(contextMenu.selected, "locked")}>Запретить ИИ менять</button>
         </menu>
       )}
     </main>

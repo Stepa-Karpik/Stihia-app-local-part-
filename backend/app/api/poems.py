@@ -3,7 +3,14 @@ from urllib.parse import quote
 
 from fastapi import APIRouter, HTTPException, Request, Response
 
-from app.schemas import PoemCreateRequest, PoemResponse, PoemUpdateRequest, PoemVersionResponse
+from app.schemas import (
+    PoemCreateRequest,
+    PoemResponse,
+    PoemUpdateRequest,
+    PoemVersionResponse,
+    ProtectedFragmentCreateRequest,
+    ProtectedFragmentResponse,
+)
 from app.services.poem_service import PoemService
 
 router = APIRouter(prefix="/api/poems", tags=["poems"])
@@ -38,6 +45,32 @@ async def get_poem(poem_id: str, request: Request) -> PoemResponse:
 async def list_versions(poem_id: str, request: Request) -> list[PoemVersionResponse]:
     records = await poem_service(request).list_versions(poem_id)
     return [PoemVersionResponse.from_record(record) for record in records]
+
+
+@router.get("/{poem_id}/protected-fragments", response_model=list[ProtectedFragmentResponse])
+async def list_protected_fragments(poem_id: str, request: Request) -> list[ProtectedFragmentResponse]:
+    records = await poem_service(request).list_protected_fragments(poem_id)
+    return [ProtectedFragmentResponse.from_record(record) for record in records]
+
+
+@router.post("/{poem_id}/protected-fragments", response_model=ProtectedFragmentResponse)
+async def create_protected_fragment(
+    poem_id: str,
+    payload: ProtectedFragmentCreateRequest,
+    request: Request,
+) -> ProtectedFragmentResponse:
+    try:
+        record = await poem_service(request).create_protected_fragment(
+            poem_id=poem_id,
+            text=payload.text,
+            start_line=payload.start_line,
+            end_line=payload.end_line,
+            kind=payload.kind,
+            now=datetime.now(UTC),
+        )
+    except ValueError as exc:
+        raise HTTPException(status_code=404, detail="Poem not found") from exc
+    return ProtectedFragmentResponse.from_record(record)
 
 
 @router.get("/{poem_id}/export.md", response_class=Response)

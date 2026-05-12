@@ -80,6 +80,18 @@ class PhraseRecord(Base):
     created_at: Mapped[datetime] = mapped_column(UTCDateTime)
 
 
+class ProtectedFragmentRecord(Base):
+    __tablename__ = "protected_fragments"
+
+    id: Mapped[str] = mapped_column(String(36), primary_key=True, default=new_id)
+    poem_id: Mapped[str] = mapped_column(ForeignKey("poems.id"))
+    text: Mapped[str] = mapped_column(Text)
+    start_line: Mapped[int] = mapped_column(Integer)
+    end_line: Mapped[int] = mapped_column(Integer)
+    kind: Mapped[str] = mapped_column(String(32))
+    created_at: Mapped[datetime] = mapped_column(UTCDateTime)
+
+
 class AppSettingRecord(Base):
     __tablename__ = "app_settings"
 
