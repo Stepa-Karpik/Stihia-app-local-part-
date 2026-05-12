@@ -1,6 +1,7 @@
 services:
   postgres:
     image: postgres:16-alpine
+    restart: unless-stopped
     environment:
       POSTGRES_DB: stihia
       POSTGRES_USER: stihia
@@ -9,16 +10,28 @@ services:
       - ${STIHIA_DATA_DIR:-./data}/postgres:/var/lib/postgresql/data
     ports:
       - "15433:5432"
+    healthcheck:
+      test: ["CMD-SHELL", "pg_isready -U stihia -d stihia"]
+      interval: 5s
+      timeout: 5s
+      retries: 20
 
   redis:
     image: redis:7-alpine
+    restart: unless-stopped
     command: redis-server --appendonly yes
     volumes:
       - ${STIHIA_DATA_DIR:-./data}/redis:/data
     ports:
       - "16380:6379"
+    healthcheck:
+      test: ["CMD", "redis-cli", "ping"]
+      interval: 5s
+      timeout: 5s
+      retries: 20
 
   backend:
+    restart: unless-stopped
     build:
       context: ./backend
       args:
@@ -32,10 +45,20 @@ services:
     ports:
       - "8000:8000"
     depends_on:
-      - postgres
-      - redis
+      postgres:
+        condition: service_healthy
+        restart: true
+      redis:
+        condition: service_healthy
+        restart: true
+    healthcheck:
+      test: ["CMD", "python", "-c", "import urllib.request; urllib.request.urlopen('http://127.0.0.1:8000/health', timeout=3)"]
+      interval: 10s
+      timeout: 5s
+      retries: 12
 
   frontend:
+    restart: unless-stopped
     build:
       context: ./frontend
     environment:
@@ -43,4 +66,6 @@ services:
     ports:
       - "5173:5173"
     depends_on:
-      - backend
+      backend:
+        condition: service_healthy
+        restart: true
