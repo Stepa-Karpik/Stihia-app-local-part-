@@ -9,6 +9,11 @@ COPY requirements.txt .
 COPY requirements-asr.txt .
 RUN pip install --no-cache-dir -r requirements.txt
 ARG INSTALL_ASR_RUNTIME=false
+RUN if [ "$INSTALL_ASR_RUNTIME" = "true" ]; then \
+    apt-get update && \
+    apt-get install -y --no-install-recommends build-essential cmake && \
+    rm -rf /var/lib/apt/lists/*; \
+    fi
 RUN if [ "$INSTALL_ASR_RUNTIME" = "true" ]; then pip install --no-cache-dir -r requirements-asr.txt; fi
 
 COPY app ./app
