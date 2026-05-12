@@ -2,6 +2,7 @@ from httpx import ASGITransport, AsyncClient
 import pytest
 
 from app.main import create_app
+from app.services.text_ai_service import TextAIService
 
 
 @pytest.mark.asyncio
@@ -62,3 +63,9 @@ async def test_autocomplete_returns_single_line_completion(tmp_path):
     assert completion.status_code == 200
     assert completion.json()["line_count"] == 1
     assert "\n" not in completion.json()["completion"]
+
+
+def test_autocomplete_drops_repetitive_model_loops():
+    completion = TextAIService._clean_single_line(", и жду, и жду, и жду, и жду")
+
+    assert completion == ""

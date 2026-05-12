@@ -1,6 +1,7 @@
 from __future__ import annotations
 
 from pathlib import Path
+import re
 
 from app.core.settings import AppSettings
 from app.services.text_tools import draft_variants, rhyme_candidates
@@ -86,7 +87,30 @@ class TextAIService:
 
     @staticmethod
     def _clean_single_line(value: str) -> str:
-        return value.strip().strip('"').splitlines()[0].strip() if value.strip() else ""
+        if not value.strip():
+            return ""
+        line = value.strip().strip('"').splitlines()[0].strip()
+        line = re.sub(r"^[\s,.;:!?-]+", "", line).strip()
+        if TextAIService._has_repetitive_loop(line):
+            return ""
+        return line
+
+    @staticmethod
+    def _has_repetitive_loop(value: str) -> bool:
+        normalized = re.sub(r"\s+", " ", value.lower()).strip()
+        if not normalized:
+            return False
+        comma_chunks = [chunk.strip(" ,.;:!?-") for chunk in normalized.split(",") if chunk.strip(" ,.;:!?-")]
+        if comma_chunks and max(comma_chunks.count(chunk) for chunk in set(comma_chunks)) >= 3:
+            return True
+        words = normalized.split()
+        for size in (1, 2, 3):
+            if len(words) < size * 3:
+                continue
+            groups = [" ".join(words[index : index + size]) for index in range(0, len(words), size)]
+            if len(groups) >= 3 and len(set(groups[:3])) == 1:
+                return True
+        return False
 
     @staticmethod
     def _fallback_completion(current_line: str) -> str:
