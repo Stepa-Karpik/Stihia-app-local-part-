@@ -2,6 +2,7 @@ from contextlib import asynccontextmanager
 from collections.abc import AsyncIterator
 
 from fastapi import FastAPI
+from fastapi.middleware.cors import CORSMiddleware
 
 from app.api.app_settings import router as app_settings_router
 from app.api.phrases import router as phrases_router
@@ -43,6 +44,12 @@ def create_app(database_url: str | None = None, enable_background_tasks: bool = 
                 await worker.stop()
 
     app = FastAPI(title=settings.site_name, lifespan=lifespan)
+    app.add_middleware(
+        CORSMiddleware,
+        allow_origins=["*"],
+        allow_methods=["*"],
+        allow_headers=["*"],
+    )
     app.state.settings = settings
     app.state.poem_service = PoemService(session_factory)
     app.state.profile_service = ProfileService(session_factory)
