@@ -17,6 +17,8 @@ async def test_text_tools_analyze_lines_and_rhyme_candidates(tmp_path):
             assert analysis.status_code == 200
             assert analysis.json()["line_count"] == 2
             assert analysis.json()["lines"][0]["syllables"] >= 1
+            assert analysis.json()["lines"][0]["rhyme_tail"] == "ете"
+            assert "rhythm_delta" in analysis.json()["lines"][0]
 
             rhyme = await client.post("/api/text-tools/rhyme", json={"word": "миг", "context": "одуматься в миг"})
             assert rhyme.status_code == 200

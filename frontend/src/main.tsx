@@ -573,10 +573,10 @@ function App() {
         <div className="label spaced">Разбор</div>
         <div className="analysis-list">
           {analysis.slice(0, 8).map((line) => (
-            <div key={line.number}>
+            <div key={line.number} className={line.flags.includes("rhythm") ? "warn" : ""}>
               <span>{line.number}</span>
-              <strong>{line.syllables}</strong>
-              <small>{line.last_word ?? "нет слова"}</small>
+              <strong>{line.syllables}{line.rhythm_delta ? `/${line.rhythm_delta > 0 ? "+" : ""}${line.rhythm_delta}` : ""}</strong>
+              <small>{line.rhyme_tail ?? line.last_word ?? "нет слова"}</small>
             </div>
           ))}
         </div>

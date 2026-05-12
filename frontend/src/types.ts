@@ -44,6 +44,9 @@ export type LineAnalysis = {
   text: string;
   syllables: number;
   last_word: string | null;
+  rhyme_tail: string | null;
+  rhythm_delta: number;
+  flags: string[];
 };
 
 export type ModelStatus = Record<string, { path: string; exists: boolean; size_bytes: number }>;

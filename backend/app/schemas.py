@@ -122,6 +122,9 @@ class LineAnalysisResponse(BaseModel):
     text: str
     syllables: int
     last_word: str | None
+    rhyme_tail: str | None = None
+    rhythm_delta: int = 0
+    flags: list[str] = []
 
 
 class AnalyzeTextResponse(BaseModel):

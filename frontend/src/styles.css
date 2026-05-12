@@ -256,6 +256,11 @@ button {
   color: rgba(247, 247, 244, 0.42);
 }
 
+.analysis-list .warn strong,
+.analysis-list .warn small {
+  color: #ffd76a;
+}
+
 .tool-result button {
   width: 100%;
   justify-content: flex-start;
