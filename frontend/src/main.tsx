@@ -71,6 +71,18 @@ function lineBeforeCursor(value: string, cursor: number) {
   return before.slice(before.lastIndexOf("\n") + 1);
 }
 
+function completionTextForInsert(value: string, cursor: number, completion: string) {
+  const trimmed = completion.trim();
+  if (!trimmed) {
+    return "";
+  }
+  const before = value.slice(0, cursor);
+  if (!before || before.endsWith("\n") || /\s$/.test(before) || /^[,.;:!?-]/.test(trimmed)) {
+    return trimmed;
+  }
+  return ` ${trimmed}`;
+}
+
 function offsetForLine(text: string, line: number) {
   if (line <= 1) {
     return 0;
@@ -114,7 +126,9 @@ function App() {
   const [autocompleteScope, setAutocompleteScope] = useState<AutocompleteScope>(
     () => (localStorage.getItem("stihia.autocompleteScope") as AutocompleteScope | null) ?? "general"
   );
-  const [completion, setCompletion] = useState<{ text: string; engine: string } | null>(null);
+  const [completion, setCompletion] = useState<{ text: string; engine: string; cursor: number } | null>(null);
+  const [editorCursor, setEditorCursor] = useState(0);
+  const [editorScrollTop, setEditorScrollTop] = useState(0);
   const recognitionRef = useRef<any>(null);
   const mediaRecorderRef = useRef<MediaRecorder | null>(null);
   const mediaChunksRef = useRef<Blob[]>([]);
@@ -309,15 +323,22 @@ function App() {
   function acceptCompletion() {
     if (!completion || !editorRef.current) return;
     const cursor = editorRef.current.selectionStart;
-    const spacer = completion.text.startsWith(" ") ? "" : " ";
-    const addition = `${spacer}${completion.text}`;
+    const addition = completionTextForInsert(text, cursor, completion.text);
+    if (!addition) return;
     setText((value) => `${value.slice(0, cursor)}${addition}${value.slice(cursor)}`);
     setCompletion(null);
     window.setTimeout(() => {
       const nextPosition = cursor + addition.length;
       editorRef.current?.focus();
       editorRef.current?.setSelectionRange(nextPosition, nextPosition);
+      setEditorCursor(nextPosition);
     }, 0);
+  }
+
+  function syncEditorCursor(editor = editorRef.current) {
+    if (!editor) return;
+    setEditorCursor(editor.selectionStart);
+    setEditorScrollTop(editor.scrollTop);
   }
 
   function openContextMenu(event: React.MouseEvent<HTMLTextAreaElement>) {
@@ -431,14 +452,16 @@ function App() {
     const timeout = window.setTimeout(async () => {
       const editor = editorRef.current;
       if (!editor) return;
-      const line = lineBeforeCursor(text, editor.selectionStart).trim();
+      const cursor = editor.selectionStart;
+      const line = lineBeforeCursor(text, cursor).trim();
       if (line.length < 4) {
         setCompletion(null);
         return;
       }
       try {
         const result = await api.completeLine(text, line, autocompleteScope);
-        setCompletion(result.completion ? { text: result.completion, engine: result.engine } : null);
+        if (editorRef.current?.selectionStart !== cursor) return;
+        setCompletion(result.completion ? { text: result.completion, engine: result.engine, cursor } : null);
       } catch {
         setCompletion(null);
       }
@@ -447,6 +470,8 @@ function App() {
   }, [autocompleteEnabled, autocompleteScope, locked, selectedPoem, text, view]);
 
   const visiblePoems = view === "deleted" ? deletedPoems : poems;
+  const inlineCompletion =
+    completion && completion.cursor === editorCursor ? completionTextForInsert(text, editorCursor, completion.text) : "";
 
   return (
     <main
@@ -533,30 +558,42 @@ function App() {
           ) : (
             <>
               <input className="title" value={title} onChange={(event) => setTitle(event.target.value)} />
-              <textarea
-                ref={editorRef}
-                className={highlight ? "poem-text highlighted" : "poem-text"}
-                style={{ fontSize: settings.studio_font_size }}
-                value={text}
-                onChange={(event) => {
-                  setText(event.target.value);
-                  setCompletion(null);
-                }}
-                onKeyDown={(event) => {
-                  if (event.key === "Tab" && completion) {
-                    event.preventDefault();
-                    acceptCompletion();
-                  }
-                }}
-                onContextMenu={openContextMenu}
-                spellCheck={false}
-              />
-              {completion && (
-                <button className="autocomplete-strip" onClick={acceptCompletion}>
-                  <span>{completion.text}</span>
-                  <small>Tab · {completion.engine}</small>
-                </button>
-              )}
+              <div className={highlight ? "poem-editor-wrap highlighted" : "poem-editor-wrap"}>
+                <pre
+                  className="autocomplete-ghost"
+                  style={{
+                    fontSize: settings.studio_font_size,
+                    transform: `translateY(${-editorScrollTop}px)`
+                  }}
+                  aria-hidden="true"
+                >
+                  <span className="ghost-base">{text.slice(0, editorCursor)}</span>
+                  <span className="ghost-suggestion">{inlineCompletion}</span>
+                </pre>
+                <textarea
+                  ref={editorRef}
+                  className="poem-text"
+                  style={{ fontSize: "inherit" }}
+                  value={text}
+                  onChange={(event) => {
+                    setText(event.target.value);
+                    setCompletion(null);
+                    syncEditorCursor(event.currentTarget);
+                  }}
+                  onSelect={(event) => syncEditorCursor(event.currentTarget)}
+                  onClick={(event) => syncEditorCursor(event.currentTarget)}
+                  onKeyUp={(event) => syncEditorCursor(event.currentTarget)}
+                  onScroll={(event) => setEditorScrollTop(event.currentTarget.scrollTop)}
+                  onKeyDown={(event) => {
+                    if (event.key === "Tab" && completion) {
+                      event.preventDefault();
+                      acceptCompletion();
+                    }
+                  }}
+                  onContextMenu={openContextMenu}
+                  spellCheck={false}
+                />
+              </div>
               <div className="voice-inline">
                 <Mic size={16} />
                 <span>{isRecording ? "Запись идет" : "Голосовой ввод в редакторе"} · {settings.speech_recognizer}</span>

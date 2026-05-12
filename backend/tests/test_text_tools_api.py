@@ -69,3 +69,25 @@ def test_autocomplete_drops_repetitive_model_loops():
     completion = TextAIService._clean_single_line(", и жду, и жду, и жду, и жду")
 
     assert completion == ""
+
+
+def test_autocomplete_drops_instruction_echoes():
+    completion = TextAIService._clean_single_line(
+        "Ты должен продолжить строку, как если ты разговариваешь с человеком"
+    )
+
+    assert completion == ""
+
+
+def test_autocomplete_drops_overlong_prose():
+    completion = TextAIService._clean_single_line(
+        "это слишком длинная прозаическая фраза без точного поэтического хвоста и без нормальной формы"
+    )
+
+    assert completion == ""
+
+
+def test_autocomplete_fallback_stays_silent():
+    completion = TextAIService._fallback_completion("И как ясный день держит смысл на краю,")
+
+    assert completion == ""

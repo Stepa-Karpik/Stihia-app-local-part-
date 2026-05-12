@@ -37,17 +37,22 @@ class TextAIService:
 
     def complete_line(self, poem_text: str, current_line: str, scope: str) -> tuple[str, str]:
         prompt = (
-            "Продолжи текущую строку русского стихотворения. Верни только хвост одной строки, "
-            "без кавычек, без переноса строки, без объяснений. Не повторяй уже написанное.\n"
-            f"Режим: {'стиль автора' if scope == 'personal' else 'лучшее продолжение'}\n"
-            f"Стих:\n{poem_text[-1800:]}\n"
-            f"Текущая строка: {current_line}"
+            "Ты пишешь только продолжение текущей строки русского стихотворения.\n"
+            "Правила ответа:\n"
+            "- верни 2-7 слов;\n"
+            "- без объяснений, кавычек, списков и переносов строки;\n"
+            "- не повторяй уже написанные слова;\n"
+            "- не говори о задании, вариантах, рифме или пользователе.\n"
+            f"Режим: {'под стиль автора' if scope == 'personal' else 'точно по смыслу и ритму'}\n"
+            f"Контекст стихотворения:\n{poem_text[-1200:]}\n"
+            f"Текущая строка: {current_line}\n"
+            "Продолжение:"
         )
-        generated = self._try_generate(prompt, max_tokens=42)
+        generated = self._try_generate(prompt, max_tokens=24)
         completion = self._clean_single_line(generated)
         if completion:
             return completion, "local_gguf"
-        return self._fallback_completion(current_line), "fallback"
+        return self._fallback_completion(current_line, bool(generated)), "fallback"
 
     def _try_generate(self, prompt: str, max_tokens: int) -> str:
         model_path = Path(self._settings.text_fast_model_path).expanduser()
@@ -68,9 +73,10 @@ class TextAIService:
         response = self._llm(
             prompt,
             max_tokens=max_tokens,
-            temperature=0.72,
-            top_p=0.9,
-            stop=["\n\n", "###"],
+            temperature=0.42,
+            top_p=0.82,
+            repeat_penalty=1.2,
+            stop=["\n", "\n\n", "###", "Текущая строка:", "Контекст стихотворения:"],
         )
         return str(response["choices"][0]["text"]).strip()
 
@@ -90,10 +96,35 @@ class TextAIService:
         if not value.strip():
             return ""
         line = value.strip().strip('"').splitlines()[0].strip()
+        if "Продолжение:" in line:
+            line = line.split("Продолжение:", 1)[1].strip()
         line = re.sub(r"^[\s,.;:!?-]+", "", line).strip()
-        if TextAIService._has_repetitive_loop(line):
+        line = re.sub(r"\s+", " ", line)
+        if TextAIService._has_repetitive_loop(line) or TextAIService._looks_like_bad_completion(line):
             return ""
         return line
+
+    @staticmethod
+    def _looks_like_bad_completion(value: str) -> bool:
+        normalized = value.lower()
+        words = re.findall(r"[а-яёa-z0-9-]+", normalized)
+        forbidden = (
+            "ты должен",
+            "продолж",
+            "строк",
+            "вариант",
+            "ответ",
+            "задани",
+            "пользовател",
+            "человек",
+            "разговарива",
+            "подходящ",
+            "рифм",
+            "ритм",
+            "стихотворен",
+            "контекст",
+        )
+        return len(words) > 9 or any(fragment in normalized for fragment in forbidden)
 
     @staticmethod
     def _has_repetitive_loop(value: str) -> bool:
@@ -113,15 +144,8 @@ class TextAIService:
         return False
 
     @staticmethod
-    def _fallback_completion(current_line: str) -> str:
-        stripped = current_line.strip().lower()
-        if not stripped:
-            return "я слышу тишину внутри строки"
-        if stripped.endswith(("миг", "крик", "стих")):
-            return "и не отпускаю этот миг"
-        if stripped.endswith(("свет", "ответ")):
-            return "где ночь оставит точный след"
-        return "и держит смысл на самом краю"
+    def _fallback_completion(current_line: str, rejected_model_output: bool = False) -> str:
+        return ""
 
     @staticmethod
     def _draft_prompt(text: str, mode: str) -> str:

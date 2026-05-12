@@ -155,20 +155,55 @@ button {
   font-weight: 760;
 }
 
-.poem-text {
+.poem-editor-wrap {
+  position: relative;
+  min-height: 54vh;
+  overflow: hidden;
+  font-family: Georgia, "Times New Roman", serif;
+  line-height: 1.58;
+}
+
+.poem-text,
+.autocomplete-ghost {
   width: 100%;
   min-height: 54vh;
   padding: 0;
   border: 0;
   outline: 0;
+  font-family: Georgia, "Times New Roman", serif;
+  line-height: 1.58;
+  white-space: pre-wrap;
+  word-break: break-word;
+}
+
+.poem-text {
+  position: relative;
+  z-index: 1;
   resize: vertical;
   background: transparent;
   color: inherit;
-  font-family: Georgia, "Times New Roman", serif;
-  line-height: 1.58;
+  caret-color: currentColor;
 }
 
-.poem-text.highlighted {
+.autocomplete-ghost {
+  position: absolute;
+  inset: 0;
+  z-index: 2;
+  margin: 0;
+  pointer-events: none;
+  overflow: hidden;
+  color: transparent;
+}
+
+.ghost-base {
+  color: transparent;
+}
+
+.ghost-suggestion {
+  color: rgba(247, 247, 244, 0.34);
+}
+
+.poem-editor-wrap.highlighted {
   animation: sourcePulse 2.4s ease;
 }
 
@@ -194,26 +229,6 @@ button {
   white-space: pre-wrap;
   color: rgba(247, 247, 244, 0.72);
   font-family: Georgia, "Times New Roman", serif;
-}
-
-.autocomplete-strip {
-  max-width: 760px;
-  margin-top: 14px;
-  padding: 8px 0;
-  display: flex;
-  gap: 12px;
-  align-items: baseline;
-  color: rgba(247, 247, 244, 0.58);
-  text-align: left;
-}
-
-.autocomplete-strip span {
-  font-family: Georgia, "Times New Roman", serif;
-  color: rgba(247, 247, 244, 0.82);
-}
-
-.autocomplete-strip small {
-  color: rgba(247, 247, 244, 0.36);
 }
 
 .inspector button {
