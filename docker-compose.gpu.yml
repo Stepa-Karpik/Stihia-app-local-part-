@@ -1,3 +1,4 @@
 services:
   backend:
-    gpus: all
+    devices:
+      - nvidia.com/gpu=all
