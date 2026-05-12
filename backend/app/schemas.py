@@ -147,3 +147,15 @@ class DraftRequest(BaseModel):
 class DraftResponse(BaseModel):
     line_count: int
     variants: list[str]
+
+
+class CompleteRequest(BaseModel):
+    poem_text: str
+    current_line: str
+    scope: str = "general"
+
+
+class CompleteResponse(BaseModel):
+    completion: str
+    line_count: int
+    engine: str

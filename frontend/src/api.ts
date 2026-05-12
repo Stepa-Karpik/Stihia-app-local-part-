@@ -1,4 +1,13 @@
-import type { AppSettings, LineAnalysis, ModelStatus, Phrase, Poem, PoemVersion, SpeechTranscription } from "./types";
+import type {
+  AppSettings,
+  CompletionResponse,
+  LineAnalysis,
+  ModelStatus,
+  Phrase,
+  Poem,
+  PoemVersion,
+  SpeechTranscription
+} from "./types";
 
 const API_BASE_URL = import.meta.env.VITE_API_BASE_URL ?? "http://localhost:8000";
 
@@ -83,6 +92,11 @@ export const api = {
     request<{ line_count: number; variants: string[] }>("/api/text-tools/draft", {
       method: "POST",
       body: JSON.stringify({ text, mode })
+    }),
+  completeLine: (poemText: string, currentLine: string, scope: string) =>
+    request<CompletionResponse>("/api/text-tools/complete", {
+      method: "POST",
+      body: JSON.stringify({ poem_text: poemText, current_line: currentLine, scope })
     }),
   transcribeAudio: async (audio: Blob, recognizer: string) => {
     const form = new FormData();

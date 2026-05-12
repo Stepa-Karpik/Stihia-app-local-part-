@@ -6,7 +6,7 @@ from app.main import create_app
 
 @pytest.mark.asyncio
 async def test_restore_versions_export_lock_and_password_flow(tmp_path):
-    app = create_app(database_url=f"sqlite+aiosqlite:///{tmp_path / 'extended.db'}")
+    app = create_app(database_url=f"sqlite+aiosqlite:///{tmp_path / 'extended.db'}", enable_background_tasks=False)
 
     async with app.router.lifespan_context(app):
         async with AsyncClient(transport=ASGITransport(app=app), base_url="http://test") as client:
@@ -47,7 +47,7 @@ async def test_restore_versions_export_lock_and_password_flow(tmp_path):
 
 @pytest.mark.asyncio
 async def test_phrase_archive_keeps_source_pointer(tmp_path):
-    app = create_app(database_url=f"sqlite+aiosqlite:///{tmp_path / 'phrases.db'}")
+    app = create_app(database_url=f"sqlite+aiosqlite:///{tmp_path / 'phrases.db'}", enable_background_tasks=False)
 
     async with app.router.lifespan_context(app):
         async with AsyncClient(transport=ASGITransport(app=app), base_url="http://test") as client:
@@ -80,7 +80,7 @@ async def test_phrase_archive_keeps_source_pointer(tmp_path):
 
 @pytest.mark.asyncio
 async def test_app_settings_persist_editor_preferences(tmp_path):
-    app = create_app(database_url=f"sqlite+aiosqlite:///{tmp_path / 'settings.db'}")
+    app = create_app(database_url=f"sqlite+aiosqlite:///{tmp_path / 'settings.db'}", enable_background_tasks=False)
 
     async with app.router.lifespan_context(app):
         async with AsyncClient(transport=ASGITransport(app=app), base_url="http://test") as client:

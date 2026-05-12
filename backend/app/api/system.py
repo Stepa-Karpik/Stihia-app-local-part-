@@ -5,8 +5,16 @@ from fastapi import APIRouter, Request
 router = APIRouter(prefix="/api/system", tags=["system"])
 
 
+def path_size(path: Path) -> int:
+    if not path.exists():
+        return 0
+    if path.is_file():
+        return path.stat().st_size
+    return sum(item.stat().st_size for item in path.rglob("*") if item.is_file())
+
+
 @router.get("/models")
-async def model_status(request: Request) -> dict[str, dict[str, str | bool]]:
+async def model_status(request: Request) -> dict[str, dict[str, str | bool | int]]:
     settings = request.app.state.settings
     paths = {
         "text_main": settings.text_main_model_path,
@@ -21,6 +29,7 @@ async def model_status(request: Request) -> dict[str, dict[str, str | bool]]:
         name: {
             "path": path,
             "exists": Path(path).expanduser().exists(),
+            "size_bytes": path_size(Path(path).expanduser()),
         }
         for name, path in paths.items()
     }

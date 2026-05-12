@@ -6,7 +6,7 @@ from app.main import create_app
 
 @pytest.mark.asyncio
 async def test_poems_api_creates_edits_and_soft_deletes(tmp_path):
-    app = create_app(database_url=f"sqlite+aiosqlite:///{tmp_path / 'api.db'}")
+    app = create_app(database_url=f"sqlite+aiosqlite:///{tmp_path / 'api.db'}", enable_background_tasks=False)
 
     async with app.router.lifespan_context(app):
         async with AsyncClient(transport=ASGITransport(app=app), base_url="http://test") as client:

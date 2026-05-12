@@ -6,7 +6,7 @@ from app.main import create_app
 
 @pytest.mark.asyncio
 async def test_text_tools_analyze_lines_and_rhyme_candidates(tmp_path):
-    app = create_app(database_url=f"sqlite+aiosqlite:///{tmp_path / 'tools.db'}")
+    app = create_app(database_url=f"sqlite+aiosqlite:///{tmp_path / 'tools.db'}", enable_background_tasks=False)
 
     async with app.router.lifespan_context(app):
         async with AsyncClient(transport=ASGITransport(app=app), base_url="http://test") as client:
@@ -25,7 +25,7 @@ async def test_text_tools_analyze_lines_and_rhyme_candidates(tmp_path):
 
 @pytest.mark.asyncio
 async def test_ai_draft_preserves_selected_line_count(tmp_path):
-    app = create_app(database_url=f"sqlite+aiosqlite:///{tmp_path / 'tools.db'}")
+    app = create_app(database_url=f"sqlite+aiosqlite:///{tmp_path / 'tools.db'}", enable_background_tasks=False)
 
     async with app.router.lifespan_context(app):
         async with AsyncClient(transport=ASGITransport(app=app), base_url="http://test") as client:
@@ -40,3 +40,23 @@ async def test_ai_draft_preserves_selected_line_count(tmp_path):
             assert draft.json()["line_count"] == 3
             assert len(draft.json()["variants"]) == 3
             assert all(len(variant.split("\n")) == 3 for variant in draft.json()["variants"])
+
+
+@pytest.mark.asyncio
+async def test_autocomplete_returns_single_line_completion(tmp_path):
+    app = create_app(database_url=f"sqlite+aiosqlite:///{tmp_path / 'tools.db'}", enable_background_tasks=False)
+
+    async with app.router.lifespan_context(app):
+        async with AsyncClient(transport=ASGITransport(app=app), base_url="http://test") as client:
+            completion = await client.post(
+                "/api/text-tools/complete",
+                json={
+                    "poem_text": "Была агонией в смертника пистолете",
+                    "current_line": "и его решением",
+                    "scope": "general",
+                },
+            )
+
+    assert completion.status_code == 200
+    assert completion.json()["line_count"] == 1
+    assert "\n" not in completion.json()["completion"]

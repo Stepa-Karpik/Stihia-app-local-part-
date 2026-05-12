@@ -21,6 +21,7 @@ import "./styles.css";
 
 type View = "active" | "deleted" | "archive" | "settings";
 type Mode = "studio" | "idle";
+type AutocompleteScope = "personal" | "general";
 
 const DEFAULT_SETTINGS: AppSettings = {
   studio_background: "#050505",
@@ -38,6 +39,13 @@ function formatDate(value: string) {
   }).format(new Date(value));
 }
 
+function formatBytes(value: number) {
+  if (!value) return "0 Б";
+  const units = ["Б", "КБ", "МБ", "ГБ"];
+  const index = Math.min(Math.floor(Math.log(value) / Math.log(1024)), units.length - 1);
+  return `${(value / 1024 ** index).toFixed(index === 0 ? 0 : 1)} ${units[index]}`;
+}
+
 function lineRangeForSelection(text: string, selectedText: string) {
   const index = selectedText ? text.indexOf(selectedText) : -1;
   if (index < 0) {
@@ -47,6 +55,11 @@ function lineRangeForSelection(text: string, selectedText: string) {
   const start = before.split("\n").length;
   const count = Math.max(1, selectedText.split("\n").length);
   return { start, end: start + count - 1, count };
+}
+
+function lineBeforeCursor(value: string, cursor: number) {
+  const before = value.slice(0, cursor);
+  return before.slice(before.lastIndexOf("\n") + 1);
 }
 
 function offsetForLine(text: string, line: number) {
@@ -87,6 +100,11 @@ function App() {
   const [toolResult, setToolResult] = useState<string[]>([]);
   const [modelStatus, setModelStatus] = useState<ModelStatus>({});
   const [isRecording, setIsRecording] = useState(false);
+  const [autocompleteEnabled, setAutocompleteEnabled] = useState(() => localStorage.getItem("stihia.autocomplete") !== "off");
+  const [autocompleteScope, setAutocompleteScope] = useState<AutocompleteScope>(
+    () => (localStorage.getItem("stihia.autocompleteScope") as AutocompleteScope | null) ?? "general"
+  );
+  const [completion, setCompletion] = useState<{ text: string; engine: string } | null>(null);
   const recognitionRef = useRef<any>(null);
   const mediaRecorderRef = useRef<MediaRecorder | null>(null);
   const mediaChunksRef = useRef<Blob[]>([]);
@@ -96,6 +114,14 @@ function App() {
 
   const locked = selectedPoem?.is_locked && !sessionUnlocked;
   const currentLineContract = useMemo(() => lineRangeForSelection(text, contextMenu?.selected ?? ""), [text, contextMenu]);
+
+  useEffect(() => {
+    localStorage.setItem("stihia.autocomplete", autocompleteEnabled ? "on" : "off");
+  }, [autocompleteEnabled]);
+
+  useEffect(() => {
+    localStorage.setItem("stihia.autocompleteScope", autocompleteScope);
+  }, [autocompleteScope]);
 
   async function refresh() {
     const [active, deleted, appSettings, archive, models] = await Promise.all([
@@ -256,6 +282,20 @@ function App() {
     window.location.href = api.exportMarkdownUrl(selectedPoem.id);
   }
 
+  function acceptCompletion() {
+    if (!completion || !editorRef.current) return;
+    const cursor = editorRef.current.selectionStart;
+    const spacer = completion.text.startsWith(" ") ? "" : " ";
+    const addition = `${spacer}${completion.text}`;
+    setText((value) => `${value.slice(0, cursor)}${addition}${value.slice(cursor)}`);
+    setCompletion(null);
+    window.setTimeout(() => {
+      const nextPosition = cursor + addition.length;
+      editorRef.current?.focus();
+      editorRef.current?.setSelectionRange(nextPosition, nextPosition);
+    }, 0);
+  }
+
   function openContextMenu(event: React.MouseEvent<HTMLTextAreaElement>) {
     event.preventDefault();
     const selected = window.getSelection()?.toString() || text.slice(event.currentTarget.selectionStart, event.currentTarget.selectionEnd);
@@ -359,6 +399,29 @@ function App() {
     refresh().catch((error) => setMessage(`API недоступен: ${error.message}`));
   }, []);
 
+  useEffect(() => {
+    if (!autocompleteEnabled || !selectedPoem || locked || view === "settings") {
+      setCompletion(null);
+      return;
+    }
+    const timeout = window.setTimeout(async () => {
+      const editor = editorRef.current;
+      if (!editor) return;
+      const line = lineBeforeCursor(text, editor.selectionStart).trim();
+      if (line.length < 4) {
+        setCompletion(null);
+        return;
+      }
+      try {
+        const result = await api.completeLine(text, line, autocompleteScope);
+        setCompletion(result.completion ? { text: result.completion, engine: result.engine } : null);
+      } catch {
+        setCompletion(null);
+      }
+    }, 420);
+    return () => window.clearTimeout(timeout);
+  }, [autocompleteEnabled, autocompleteScope, locked, selectedPoem, text, view]);
+
   const visiblePoems = view === "deleted" ? deletedPoems : poems;
 
   return (
@@ -430,6 +493,10 @@ function App() {
             changePassword={changePassword}
             modelStatus={modelStatus}
             flushOutbox={flushOutbox}
+            autocompleteEnabled={autocompleteEnabled}
+            setAutocompleteEnabled={setAutocompleteEnabled}
+            autocompleteScope={autocompleteScope}
+            setAutocompleteScope={setAutocompleteScope}
           />
         ) : selectedPoem ? (
           locked ? (
@@ -447,10 +514,25 @@ function App() {
                 className={highlight ? "poem-text highlighted" : "poem-text"}
                 style={{ fontSize: settings.studio_font_size }}
                 value={text}
-                onChange={(event) => setText(event.target.value)}
+                onChange={(event) => {
+                  setText(event.target.value);
+                  setCompletion(null);
+                }}
+                onKeyDown={(event) => {
+                  if (event.key === "Tab" && completion) {
+                    event.preventDefault();
+                    acceptCompletion();
+                  }
+                }}
                 onContextMenu={openContextMenu}
                 spellCheck={false}
               />
+              {completion && (
+                <button className="autocomplete-strip" onClick={acceptCompletion}>
+                  <span>{completion.text}</span>
+                  <small>Tab · {completion.engine}</small>
+                </button>
+              )}
               <div className="voice-inline">
                 <Mic size={16} />
                 <span>{isRecording ? "Запись идет" : "Голосовой ввод в редакторе"} · {settings.speech_recognizer}</span>
@@ -536,7 +618,11 @@ function SettingsView({
   saveSettings,
   changePassword,
   modelStatus,
-  flushOutbox
+  flushOutbox,
+  autocompleteEnabled,
+  setAutocompleteEnabled,
+  autocompleteScope,
+  setAutocompleteScope
 }: {
   settings: AppSettings;
   setSettings: (settings: AppSettings) => void;
@@ -548,6 +634,10 @@ function SettingsView({
   changePassword: () => void;
   modelStatus: ModelStatus;
   flushOutbox: () => void;
+  autocompleteEnabled: boolean;
+  setAutocompleteEnabled: (value: boolean) => void;
+  autocompleteScope: AutocompleteScope;
+  setAutocompleteScope: (value: AutocompleteScope) => void;
 }) {
   function setRecognizer(value: string) {
     setSettings({ ...settings, speech_recognizer: value as SpeechRecognizer });
@@ -565,6 +655,17 @@ function SettingsView({
         <button className="primary" onClick={saveSettings}>Сохранить настройки</button>
       </section>
       <section>
+        <h2>Автокомплит</h2>
+        <label className="checkbox-line">
+          <input type="checkbox" checked={autocompleteEnabled} onChange={(event) => setAutocompleteEnabled(event.target.checked)} />
+          Включить подсказки строки
+        </label>
+        <select value={autocompleteScope} onChange={(event) => setAutocompleteScope(event.target.value as AutocompleteScope)}>
+          <option value="general">Лучший вариант</option>
+          <option value="personal">По моему стилю</option>
+        </select>
+      </section>
+      <section>
         <h2>Распознавание голоса</h2>
         <select value={settings.speech_recognizer} onChange={(event) => setRecognizer(event.target.value)}>
           <option value="local_whisper">Локальная Whisper-модель</option>
@@ -580,7 +681,7 @@ function SettingsView({
             <div key={name}>
               <span>{name}</span>
               <strong>{status.exists ? "найдена" : "нет"}</strong>
-              <small>{status.path}</small>
+              <small>{formatBytes(status.size_bytes)} · {status.path}</small>
             </div>
           ))}
         </div>

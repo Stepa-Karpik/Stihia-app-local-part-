@@ -46,10 +46,16 @@ export type LineAnalysis = {
   last_word: string | null;
 };
 
-export type ModelStatus = Record<string, { path: string; exists: boolean }>;
+export type ModelStatus = Record<string, { path: string; exists: boolean; size_bytes: number }>;
 
 export type SpeechTranscription = {
   text: string;
   engine: string;
   warning: string | null;
+};
+
+export type CompletionResponse = {
+  completion: string;
+  line_count: number;
+  engine: string;
 };

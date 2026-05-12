@@ -17,6 +17,7 @@ from app.services.phrase_service import PhraseService
 from app.services.poem_service import PoemService
 from app.services.profile_service import ProfileService
 from app.services.speech_service import SpeechService
+from app.services.text_ai_service import TextAIService
 from app.services.telegram_outbox_service import TelegramOutboxService
 from app.services.telegram_outbox_worker import TelegramOutboxWorker
 
@@ -48,6 +49,7 @@ def create_app(database_url: str | None = None, enable_background_tasks: bool = 
     app.state.phrase_service = PhraseService(session_factory)
     app.state.app_settings_service = AppSettingsService(session_factory)
     app.state.speech_service = SpeechService(settings)
+    app.state.text_ai_service = TextAIService(settings)
     app.state.telegram_outbox_service = TelegramOutboxService(
         session_factory,
         bot_server_url=settings.bot_server_url,

@@ -11,7 +11,7 @@ class FakeOutbox:
 
 @pytest.mark.asyncio
 async def test_system_api_exposes_model_status_and_outbox_flush(tmp_path):
-    app = create_app(database_url=f"sqlite+aiosqlite:///{tmp_path / 'system.db'}")
+    app = create_app(database_url=f"sqlite+aiosqlite:///{tmp_path / 'system.db'}", enable_background_tasks=False)
 
     async with app.router.lifespan_context(app):
         app.state.telegram_outbox_service = FakeOutbox()
@@ -19,6 +19,7 @@ async def test_system_api_exposes_model_status_and_outbox_flush(tmp_path):
             models = await client.get("/api/system/models")
             assert models.status_code == 200
             assert "voice_vad" in models.json()
+            assert "size_bytes" in models.json()["voice_vad"]
 
             flush = await client.post("/api/system/telegram-outbox/flush")
             assert flush.status_code == 200

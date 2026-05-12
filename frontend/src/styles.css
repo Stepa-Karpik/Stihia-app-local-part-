@@ -196,6 +196,26 @@ button {
   font-family: Georgia, "Times New Roman", serif;
 }
 
+.autocomplete-strip {
+  max-width: 760px;
+  margin-top: 14px;
+  padding: 8px 0;
+  display: flex;
+  gap: 12px;
+  align-items: baseline;
+  color: rgba(247, 247, 244, 0.58);
+  text-align: left;
+}
+
+.autocomplete-strip span {
+  font-family: Georgia, "Times New Roman", serif;
+  color: rgba(247, 247, 244, 0.82);
+}
+
+.autocomplete-strip small {
+  color: rgba(247, 247, 244, 0.36);
+}
+
 .inspector button {
   width: 100%;
   justify-content: flex-start;
@@ -348,6 +368,16 @@ button {
   display: grid;
   gap: 7px;
   color: rgba(247, 247, 244, 0.62);
+}
+
+.settings-view .checkbox-line {
+  display: flex;
+  align-items: center;
+  gap: 10px;
+}
+
+.settings-view .checkbox-line input {
+  min-height: auto;
 }
 
 .settings-view input[type="range"] {
